@@ -1,0 +1,14 @@
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+android/.gradle/
+android/local.properties
+ios/Pods/
+ios/.symlinks/
+
+# drift/build_runner가 자동 생성하는 파일 (커밋 안 함, 빌드 때마다 새로 생성)
+*.g.dart

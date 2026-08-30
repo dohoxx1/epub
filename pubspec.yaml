@@ -1,0 +1,46 @@
+name: epub_reader
+description: 개인용 고성능 EPUB 리더 (원본 파일을 이동/복사하지 않는 서재형 라이브러리)
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # WebView 기반 렌더링 (Google 공식 유지보수 패키지 - AGP/Kotlin 호환성 안정적)
+  webview_flutter: ^4.10.0
+
+  # 파일 선택 (SAF 기반, 원본 위치 그대로 URI로 접근)
+  # 8.x는 compileSdk 34로 고정 빌드되어 있어 최신 Android Gradle Plugin과 충돌함.
+  # 10.x부터 flutter.compileSdkVersion을 동적으로 따라가도록 수정됨.
+  file_picker: ^10.3.9
+
+  # EPUB(zip) 파싱
+  archive: ^3.6.1
+  xml: ^6.5.0
+
+  # 캐시/데이터 디렉토리
+  path_provider: ^2.1.4
+  path: ^1.9.0
+  crypto: ^3.0.5 # 파일 경로 -> 캐시 키 해시
+
+  # 로컬 DB (Phase 2 이후 읽던 위치/메모/하이라이트 저장에 사용, 지금은 스키마만 준비)
+  drift: ^2.20.3
+  sqlite3_flutter_libs: ^0.5.24
+  sqlite3: ^2.4.6
+
+  # 상태관리
+  flutter_riverpod: ^2.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  drift_dev: ^2.20.3
+  build_runner: ^2.4.13
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

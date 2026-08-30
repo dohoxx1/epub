@@ -1,0 +1,83 @@
+name: Build APK
+
+# main 브랜치에 push하거나, Actions 탭에서 수동 실행할 때마다 빌드
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Java 설치 (Android 빌드에 필요)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Flutter 설치 (클라우드 러너 안에서, 사용자 PC 설치 아님)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable' # 버전을 고정하지 않고 항상 최신 stable 사용 (Kotlin 호환성 문제 방지)
+          cache: true # Flutter SDK 자체를 캐싱 (매번 새로 다운로드하지 않음)
+
+      - name: android/ios 등 플랫폼 폴더 생성
+        # 저장소에는 lib/, pubspec.yaml만 있고 android/ 폴더는 없으므로 여기서 생성
+        run: flutter create --platforms=android .
+
+      - name: compileSdk/targetSdk를 36으로 상향
+        # file_picker가 의존하는 flutter_plugin_android_lifecycle이 API 36 컴파일을 요구함.
+        # build.gradle.kts(신규 템플릿) / build.gradle(구버전) 양쪽 다 시도, 없으면 무시.
+        run: |
+          FILE_KTS=android/app/build.gradle.kts
+          FILE_GROOVY=android/app/build.gradle
+          if [ -f "$FILE_KTS" ]; then
+            sed -i 's/compileSdk = flutter\.compileSdkVersion/compileSdk = 36/' "$FILE_KTS" || true
+            sed -i 's/targetSdk = flutter\.targetSdkVersion/targetSdk = 36/' "$FILE_KTS" || true
+          fi
+          if [ -f "$FILE_GROOVY" ]; then
+            sed -i 's/compileSdkVersion flutter\.compileSdkVersion/compileSdkVersion 36/' "$FILE_GROOVY" || true
+            sed -i 's/targetSdkVersion flutter\.targetSdkVersion/targetSdkVersion 36/' "$FILE_GROOVY" || true
+          fi
+          echo "----- 결과 확인 -----"
+          grep -i "sdk" "$FILE_KTS" 2>/dev/null || grep -i "sdk" "$FILE_GROOVY" 2>/dev/null
+
+      - name: Gradle 캐시
+        # Android 빌드용 Gradle 의존성/wrapper를 캐싱 (매번 처음부터 새로 받지 않음)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: pub 패키지 캐시
+        uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: pub-${{ runner.os }}-${{ hashFiles('pubspec.yaml') }}
+          restore-keys: |
+            pub-${{ runner.os }}-
+
+      - name: 패키지 설치
+        run: flutter pub get
+
+      - name: DB 코드 생성 (drift build_runner)
+        # app_database.dart의 @DriftDatabase 어노테이션으로부터 app_database.g.dart를 생성.
+        # 이 파일은 저장소에 커밋하지 않고 빌드 때마다 생성한다.
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: 디버그 APK 빌드
+        run: flutter build apk --debug
+
+      - name: APK를 Actions 아티팩트로 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: epub-reader-debug-apk
+          path: build/app/outputs/flutter-apk/app-debug.apk
