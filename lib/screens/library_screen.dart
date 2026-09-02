@@ -35,6 +35,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   late final LibraryScanService _scanService;
   bool _opening = false;
   bool _scanning = false;
+  bool _gridView = false;
 
   // 책장/태그 필터는 동시에 하나만 적용한다 (책장 고르면 태그 필터는 풀리고, 반대도 마찬가지).
   int? _selectedShelfId;
@@ -433,6 +434,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         title: const Text('내 서재'),
         actions: [
           IconButton(
+            icon: Icon(_gridView
+                ? Icons.view_list_outlined
+                : Icons.grid_view_outlined),
+            tooltip: _gridView ? '리스트로 보기' : '표지 그리드로 보기',
+            onPressed: () => setState(() => _gridView = !_gridView),
+          ),
+          IconButton(
             icon: const Icon(Icons.calendar_month_outlined),
             tooltip: '독서 캘린더',
             onPressed: () => Navigator.of(context).push(
@@ -592,38 +600,154 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           );
         }
-        return ListView.builder(
-          itemCount: books.length,
-          itemBuilder: (context, index) {
-            final book = books[index];
-            final fileExists = File(book.originalUri).existsSync();
-            return ListTile(
-              leading: Icon(
-                Icons.menu_book_outlined,
-                color: fileExists ? null : Theme.of(context).disabledColor,
-              ),
-              title: Text(book.title),
-              subtitle: Text(
-                fileExists
-                    ? (book.author ?? '')
-                    : '파일을 찾을 수 없음 - 폴더를 다시 스캔하거나 다시 열어주세요',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: fileExists
-                    ? null
-                    : TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              trailing: IconButton(
-                icon: const Icon(Icons.more_vert),
-                tooltip: '책장/태그 관리',
-                onPressed: () => _openBookManageSheet(book),
-              ),
-              onTap: () => _openPath(book.originalUri),
-              onLongPress: () => _confirmRemoveBook(book),
-            );
-          },
+        return StreamBuilder<List<ReadingProgressRow>>(
+          stream: ref.read(appDatabaseProvider).watchAllProgress(),
+          builder: (context, progressSnapshot) =>
+              StreamBuilder<List<BookReadingStateRow>>(
+            stream: ref.read(appDatabaseProvider).watchReadingStates(),
+            builder: (context, stateSnapshot) =>
+                StreamBuilder<List<ReadingSessionRow>>(
+              stream: ref.read(appDatabaseProvider).watchAllReadingSessions(),
+              builder: (context, sessionSnapshot) {
+                final progress = {
+                  for (final row
+                      in progressSnapshot.data ?? const <ReadingProgressRow>[])
+                    row.bookId: row
+                };
+                final states = {
+                  for (final row
+                      in stateSnapshot.data ?? const <BookReadingStateRow>[])
+                    row.bookId: row
+                };
+                final seconds = <int, int>{};
+                for (final session
+                    in sessionSnapshot.data ?? const <ReadingSessionRow>[]) {
+                  seconds[session.bookId] =
+                      (seconds[session.bookId] ?? 0) + session.activeSeconds;
+                }
+                return _gridView
+                    ? _buildBookGrid(books, progress, states, seconds)
+                    : _buildBookList(books, progress, states, seconds);
+              },
+            ),
+          ),
         );
       },
     );
+  }
+
+  Widget _buildBookList(
+    List<LibraryBookRow> books,
+    Map<int, ReadingProgressRow> progress,
+    Map<int, BookReadingStateRow> states,
+    Map<int, int> seconds,
+  ) =>
+      ListView.builder(
+        itemCount: books.length,
+        itemBuilder: (context, index) => _bookListTile(
+            books[index],
+            progress[books[index].id],
+            states[books[index].id],
+            seconds[books[index].id] ?? 0),
+      );
+
+  Widget _buildBookGrid(
+    List<LibraryBookRow> books,
+    Map<int, ReadingProgressRow> progress,
+    Map<int, BookReadingStateRow> states,
+    Map<int, int> seconds,
+  ) =>
+      GridView.builder(
+        padding: const EdgeInsets.all(12),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          childAspectRatio: .55,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: books.length,
+        itemBuilder: (context, index) {
+          final book = books[index];
+          return InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _openPath(book.originalUri),
+            onLongPress: () => _confirmRemoveBook(book),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: _cover(book, borderRadius: 12)),
+              const SizedBox(height: 6),
+              Text(book.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600)),
+              Text(
+                  _readingLabel(progress[book.id], states[book.id],
+                      seconds[book.id] ?? 0),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall),
+            ]),
+          );
+        },
+      );
+
+  Widget _bookListTile(LibraryBookRow book, ReadingProgressRow? progress,
+      BookReadingStateRow? state, int seconds) {
+    final fileExists = File(book.originalUri).existsSync();
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      leading:
+          SizedBox(width: 48, height: 68, child: _cover(book, borderRadius: 6)),
+      title: Text(book.title),
+      subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(fileExists ? (book.author ?? '작가 미상') : '파일을 찾을 수 없음',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: fileExists
+                ? null
+                : TextStyle(color: Theme.of(context).colorScheme.error)),
+        const SizedBox(height: 4),
+        LinearProgressIndicator(
+            value: _overallProgress(progress),
+            minHeight: 4,
+            borderRadius: BorderRadius.circular(4)),
+        const SizedBox(height: 3),
+        Text(_readingLabel(progress, state, seconds),
+            style: Theme.of(context).textTheme.bodySmall),
+      ]),
+      trailing: IconButton(
+          icon: const Icon(Icons.more_vert),
+          tooltip: '책장/태그 관리',
+          onPressed: () => _openBookManageSheet(book)),
+      onTap: () => _openPath(book.originalUri),
+      onLongPress: () => _confirmRemoveBook(book),
+    );
+  }
+
+  Widget _cover(LibraryBookRow book, {required double borderRadius}) {
+    final path = book.coverImagePath;
+    final image = path != null && File(path).existsSync()
+        ? Image.file(File(path),
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const Icon(Icons.menu_book_outlined))
+        : const Center(child: Icon(Icons.menu_book_outlined));
+    return ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: ColoredBox(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: SizedBox.expand(child: image)));
+  }
+
+  double _overallProgress(ReadingProgressRow? row) =>
+      row == null ? 0 : row.scrollFraction.clamp(0.0, 1.0);
+
+  String _readingLabel(
+      ReadingProgressRow? progress, BookReadingStateRow? state, int seconds) {
+    final percent = (_overallProgress(progress) * 100).round();
+    final time = seconds >= 3600
+        ? '${seconds ~/ 3600}시간 ${(seconds % 3600) ~/ 60}분'
+        : '${seconds ~/ 60}분';
+    if (state?.completedAt != null) return '완독 · $percent% · $time';
+    return '읽는 중 · $percent% · $time';
   }
 }

@@ -30,6 +30,9 @@ class LibraryBooks extends Table {
   TextColumn get originalUri => text()();
   TextColumn get title => text()();
   TextColumn get author => text().nullable()();
+
+  /// EPUB을 앱 캐시에 풀어 둘 때 얻은 표지 이미지 경로. 원본 EPUB은 수정하지 않는다.
+  TextColumn get coverImagePath => text().nullable()();
   DateTimeColumn get addedAt => dateTime().withDefault(currentDateAndTime)();
 }
 
@@ -208,7 +211,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -268,6 +271,9 @@ class AppDatabase extends _$AppDatabase {
             await m.createTable(readingSessions);
             await m.createTable(bookReadingStates);
           }
+          if (from < 11) {
+            await m.addColumn(libraryBooks, libraryBooks.coverImagePath);
+          }
         },
       );
 
@@ -277,6 +283,7 @@ class AppDatabase extends _$AppDatabase {
     required String originalUri,
     required String title,
     String? author,
+    String? coverImagePath,
   }) async {
     final key = _identityKey(title, author);
     final existing = await (select(libraryBooks)
@@ -286,9 +293,13 @@ class AppDatabase extends _$AppDatabase {
     if (existing != null) {
       // 파일을 다시 골랐거나(경로가 바뀜) 새 버전으로 갱신된 경우, 최신 경로만 갱신.
       // 읽던 위치/형광펜/메모/책갈피는 bookId 그대로라 자동으로 이어진다.
-      if (existing.originalUri != originalUri) {
+      if (existing.originalUri != originalUri ||
+          existing.coverImagePath != coverImagePath) {
         await (update(libraryBooks)..where((b) => b.id.equals(existing.id)))
-            .write(LibraryBooksCompanion(originalUri: Value(originalUri)));
+            .write(LibraryBooksCompanion(
+          originalUri: Value(originalUri),
+          coverImagePath: Value(coverImagePath),
+        ));
       }
       return existing.id;
     }
@@ -299,6 +310,7 @@ class AppDatabase extends _$AppDatabase {
         originalUri: originalUri,
         title: title,
         author: Value(author),
+        coverImagePath: Value(coverImagePath),
       ),
     );
   }
@@ -307,6 +319,9 @@ class AppDatabase extends _$AppDatabase {
     return (select(readingProgress)..where((row) => row.bookId.equals(bookId)))
         .getSingleOrNull();
   }
+
+  Stream<List<ReadingProgressRow>> watchAllProgress() =>
+      select(readingProgress).watch();
 
   /// 라이브러리에 등록된 모든 책을 최근 추가 순으로 스트림으로 돌려준다.
   /// 새 책이 추가되면(getOrCreateBook 호출 시) 자동으로 갱신되어 UI에 반영된다.
@@ -571,6 +586,9 @@ class AppDatabase extends _$AppDatabase {
           ..orderBy([(s) => OrderingTerm(expression: s.startedAt)]))
         .watch();
   }
+
+  Stream<List<ReadingSessionRow>> watchAllReadingSessions() =>
+      select(readingSessions).watch();
 
   Stream<List<LibraryBookRow>> watchRecentBooks({int limit = 10}) {
     final query = select(libraryBooks).join([

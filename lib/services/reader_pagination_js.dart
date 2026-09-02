@@ -534,6 +534,36 @@ const String kReaderInitJsTemplate = '''
           e.preventDefault();
           e.stopPropagation();
           var t = e.touches[0];
+          // 선택 핸들을 좌/우 가장자리로 끌면 페이지를 넘긴 뒤 같은 손가락 위치에서
+          // 계속 범위를 잡는다. 일반 페이지 스와이프가 선택을 빼앗지 않게 이 핸들
+          // 이벤트에서 preventDefault를 유지한다.
+          var box = scrollBox();
+          var edge = 22;
+          var max = maxScrollLeft();
+          if (t.clientX > PAGE_WIDTH - edge && box.scrollLeft < max - 1) {
+            box.scrollLeft = Math.min(max, box.scrollLeft + PAGE_WIDTH);
+            setTimeout(function() {
+              if (!draggingHandle) return;
+              var movedCaret = caretAt(PAGE_WIDTH - edge - 2, t.clientY);
+              if (!movedCaret) return;
+              if (draggingHandle === "start") { csel.startNode = movedCaret.node; csel.startOffset = movedCaret.offset; }
+              else { csel.endNode = movedCaret.node; csel.endOffset = movedCaret.offset; }
+              normalizeOrder(); renderOverlay(); reportSelection();
+            }, 60);
+            return;
+          }
+          if (t.clientX < edge && box.scrollLeft > 1) {
+            box.scrollLeft = Math.max(0, box.scrollLeft - PAGE_WIDTH);
+            setTimeout(function() {
+              if (!draggingHandle) return;
+              var movedCaret = caretAt(edge + 2, t.clientY);
+              if (!movedCaret) return;
+              if (draggingHandle === "start") { csel.startNode = movedCaret.node; csel.startOffset = movedCaret.offset; }
+              else { csel.endNode = movedCaret.node; csel.endOffset = movedCaret.offset; }
+              normalizeOrder(); renderOverlay(); reportSelection();
+            }, 60);
+            return;
+          }
           var caret = caretAt(t.clientX, t.clientY);
           if (!caret) return;
           if (draggingHandle === "start") { csel.startNode = caret.node; csel.startOffset = caret.offset; }

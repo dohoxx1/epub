@@ -187,6 +187,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
         originalUri: widget.epubPath,
         title: book.title,
         author: book.author,
+        coverImagePath: book.coverImagePath,
       );
       final progress = await db.getProgress(bookId);
 

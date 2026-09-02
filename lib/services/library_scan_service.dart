@@ -45,6 +45,7 @@ class LibraryScanService {
           originalUri: entity.path,
           title: book.title,
           author: book.author,
+          coverImagePath: book.coverImagePath,
         );
         added++;
       } catch (_) {
