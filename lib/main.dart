@@ -11,18 +11,45 @@ class EpubReaderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const seed = Color(0xFF6750A4);
     return MaterialApp(
       title: 'EPUB Reader',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: const Color(0xFF3E7CB1),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light),
         useMaterial3: true,
-        brightness: Brightness.light,
+        scaffoldBackgroundColor: const Color(0xFFFAF8FC),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+        ),
+        cardTheme: const CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
+        ),
       ),
       darkTheme: ThemeData(
-        colorSchemeSeed: const Color(0xFF3E7CB1),
+        colorScheme: ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark),
         useMaterial3: true,
-        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF121014),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          backgroundColor: Colors.transparent,
+        ),
+        cardTheme: const CardThemeData(
+          elevation: 0,
+          margin: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(18)),
+          ),
+        ),
       ),
       themeMode: ThemeMode.system,
       home: const LibraryScreen(),
