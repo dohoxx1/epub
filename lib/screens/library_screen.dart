@@ -31,7 +31,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   List<ShelfRow> _shelves = const [];
   List<TagRow> _tags = const [];
   List<LibraryFolderRow> _folders = const [];
-  Map<int, ReadingProgressRow> _progress = const {};
+  Map<int, ReadingProgressRow> _progressByBook = const {};
   Map<int, BookReadingStateRow> _states = const {};
 
   bool _grid = true;
@@ -80,7 +80,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       if (!mounted) return;
       setState(() {
         _books = results[0] as List<LibraryBookRow>;
-        _progress = {
+        _progressByBook = {
           for (final row in results[1] as List<ReadingProgressRow>)
             row.bookId: row,
         };
@@ -112,7 +112,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         .toList(growable: false);
   }
 
-  double _progress(ReadingProgressRow? row) =>
+  double _progressValue(ReadingProgressRow? row) =>
       row?.scrollFraction.clamp(0.0, 1.0) ?? 0.0;
 
   Future<void> _open(String path) async {
@@ -363,7 +363,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   List<Widget> _continueReading() {
     final reading = _books
-        .where((book) => _progress(_progress[book.id]) > 0)
+        .where((book) => _progressValue(_progressByBook[book.id]) > 0)
         .take(6)
         .toList(growable: false);
     if (reading.isEmpty) return const [];
@@ -384,7 +384,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (_, index) {
               final book = reading[index];
-              final value = _progress(_progress[book.id]);
+              final value = _progressValue(_progressByBook[book.id]);
               return SizedBox(
                 width: 280,
                 child: Material(
@@ -459,16 +459,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   String _label(ReadingProgressRow? progress, BookReadingStateRow? state) {
-    final percent = (_progress(progress) * 100).round();
+    final percent = (_progressValue(progress) * 100).round();
     if (state?.completedAt != null) return '완독 · $percent%';
     if (percent == 0) return '읽지 않음';
     return '읽는 중 · $percent%';
   }
 
   Widget _gridBook(LibraryBookRow book) {
-    final progress = _progress[_bookKey(book)];
+    final progress = _progressByBook[_bookKey(book)];
     final state = _states[_bookKey(book)];
-    final value = _progress(progress);
+    final value = _progressValue(progress);
     return GestureDetector(
       onTap: () => _open(book.originalUri),
       onLongPress: () => _bookSheet(book),
@@ -508,9 +508,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   int _bookKey(LibraryBookRow book) => book.id;
 
   Widget _listBook(LibraryBookRow book) {
-    final progress = _progress[_bookKey(book)];
+    final progress = _progressByBook[_bookKey(book)];
     final state = _states[_bookKey(book)];
-    final value = _progress(progress);
+    final value = _progressValue(progress);
     return InkWell(
       onTap: () => _open(book.originalUri),
       onLongPress: () => _bookSheet(book),
