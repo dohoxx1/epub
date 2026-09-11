@@ -53,6 +53,36 @@ String buildReaderOverrideCss(ReaderSettings s) {
     buffer.writeln(
         'p { margin-top: 0 !important; margin-bottom: ${px}px !important; }');
   }
+
+  // 선택이 끝난 뒤에도 별도의 작은 핸들을 다시 찾아 잡지 않도록 한다.
+  // end 핸들의 실제 터치 영역만 화면 전체로 확장하고, 시각적인 핸들은 끝점에
+  // 그대로 표시한다. 따라서 선택 상태에서 다음 터치는 곧바로 "선택 계속"이 된다.
+  buffer.writeln('''
+.__reader_sel_handle__[data-side="end"] {
+  width: 100vw !important;
+  height: 100vh !important;
+  transform: translate(calc(-50vw + 17px), calc(-50vh + 7px)) !important;
+  background: transparent !important;
+}
+.__reader_sel_handle__[data-side="end"] svg {
+  opacity: 0 !important;
+}
+.__reader_sel_handle__[data-side="end"]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #4285F4;
+  box-shadow: inset 0 0 0 4px rgba(255,255,255,.9);
+  pointer-events: none;
+}
+''');
+
   return buffer.toString();
 }
 
