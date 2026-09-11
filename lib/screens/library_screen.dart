@@ -14,7 +14,6 @@ import 'reading_stats_screen.dart';
 /// Personal bookshelf. EPUB source files always remain at their original paths.
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
-
   @override
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
@@ -52,14 +51,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   Stream<List<LibraryBookRow>> get _visibleBooks {
-    final db = ref.read(appDatabaseProvider);
-    if (_shelfId != null) return db.watchBooksInShelf(_shelfId!);
-    if (_tagId != null) return db.watchBooksWithTag(_tagId!);
+    if (_shelfId != null) {
+      return ref.read(appDatabaseProvider).watchBooksInShelf(_shelfId!);
+    }
+    if (_tagId != null) {
+      return ref.read(appDatabaseProvider).watchBooksWithTag(_tagId!);
+    }
     return _allBooks;
   }
 
   Future<void> _open(String path) async {
-    if (_busy || !mounted) return;
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await Navigator.of(context).push(
@@ -75,13 +77,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       type: FileType.custom,
       allowedExtensions: ['epub'],
     );
-    if (!mounted) return;
     final path = result?.files.single.path;
-    if (path != null) await _open(path);
+    if (path != null && mounted) await _open(path);
   }
 
   Future<void> _scanFolder(int id, String path) async {
-    if (!mounted) return;
     setState(() => _busy = true);
     try {
       final result = await _scanner.scanFolder(path);
@@ -228,36 +228,23 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     builder: (_) => const ReadingCalendarScreen(),
                   ),
                 );
-              } else if (value == 'stats') {
+              }
+              if (value == 'stats') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => const ReadingStatsScreen(),
                   ),
                 );
-              } else if (value == 'tags') {
-                _tagSheet();
-              } else if (value == 'folders') {
-                _folderSheet();
               }
+              if (value == 'tags') _tagSheet();
+              if (value == 'folders') _folderSheet();
             },
             itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'calendar',
-                child: Text('독서 캘린더'),
-              ),
-              PopupMenuItem(
-                value: 'stats',
-                child: Text('독서 통계'),
-              ),
-              PopupMenuItem(
-                value: 'tags',
-                child: Text('태그 필터'),
-              ),
-              PopupMenuItem(
-                value: 'folders',
-                child: Text('서재 폴더'),
-              ),
+              PopupMenuItem(value: 'calendar', child: Text('독서 캘린더')),
+              PopupMenuItem(value: 'stats', child: Text('독서 통계')),
+              PopupMenuItem(value: 'tags', child: Text('태그 필터')),
+              PopupMenuItem(value: 'folders', child: Text('서재 폴더')),
             ],
           ),
         ],
@@ -269,102 +256,82 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       ),
       body: StreamBuilder<List<ShelfRow>>(
         stream: _shelves,
-        builder: (context, shelfSnap) {
-          return StreamBuilder<List<LibraryBookRow>>(
-            stream: _visibleBooks,
-            builder: (context, bookSnap) {
-              if (!bookSnap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+        builder: (context, shelfSnap) => StreamBuilder<List<LibraryBookRow>>(
+          stream: _visibleBooks,
+          builder: (context, bookSnap) {
+            if (!bookSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final books = _searchBooks(bookSnap.data!);
+            return StreamBuilder<List<ReadingProgressRow>>(
+              stream: db.watchAllProgress(),
+              builder: (context, progressSnap) =>
+                  StreamBuilder<List<BookReadingStateRow>>(
+                stream: db.watchReadingStates(),
+                builder: (context, stateSnap) =>
+                    StreamBuilder<List<ReadingSessionRow>>(
+                  stream: db.watchAllReadingSessions(),
+                  builder: (context, sessionSnap) {
+                    final progress = {
+                      for (final x
+                          in progressSnap.data ??
+                              const <ReadingProgressRow>[])
+                        x.bookId: x,
+                    };
+                    final states = {
+                      for (final x
+                          in stateSnap.data ??
+                              const <BookReadingStateRow>[])
+                        x.bookId: x,
+                    };
+                    final seconds = <int, int>{};
+                    for (final x
+                        in sessionSnap.data ?? const <ReadingSessionRow>[]) {
+                      seconds[x.bookId] =
+                          (seconds[x.bookId] ?? 0) + x.activeSeconds;
+                    }
 
-              final books = _searchBooks(bookSnap.data!);
-              return StreamBuilder<List<ReadingProgressRow>>(
-                stream: db.watchAllProgress(),
-                builder: (context, progressSnap) {
-                  return StreamBuilder<List<BookReadingStateRow>>(
-                    stream: db.watchReadingStates(),
-                    builder: (context, stateSnap) {
-                      return StreamBuilder<List<ReadingSessionRow>>(
-                        stream: db.watchAllReadingSessions(),
-                        builder: (context, sessionSnap) {
-                          final progress = {
-                            for (final item
-                                in progressSnap.data ??
-                                    const <ReadingProgressRow>[]) item.bookId: item,
-                          };
-                          final states = {
-                            for (final item
-                                in stateSnap.data ??
-                                    const <BookReadingStateRow>[]) item.bookId: item,
-                          };
-                          final seconds = <int, int>{};
-                          for (final session
-                              in sessionSnap.data ??
-                                  const <ReadingSessionRow>[]) {
-                            seconds[session.bookId] =
-                                (seconds[session.bookId] ?? 0) +
-                                    session.activeSeconds;
-                          }
-
-                          return CustomScrollView(
-                            slivers: [
-                              SliverToBoxAdapter(
-                                child: _header(shelfSnap.data ?? const []),
-                              ),
-                              if (_query.isEmpty &&
-                                  _shelfId == null &&
-                                  _tagId == null)
-                                ..._continueReading(bookSnap.data!, progress),
-                              SliverToBoxAdapter(
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    22,
-                                    20,
-                                    10,
-                                  ),
-                                  child: Text(
-                                    '책 ${books.length}',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium
-                                        ?.copyWith(fontWeight: FontWeight.w800),
-                                  ),
-                                ),
-                              ),
-                              if (books.isEmpty)
-                                SliverFillRemaining(
-                                  hasScrollBody: false,
-                                  child: _empty(),
-                                )
-                              else if (_grid)
-                                _gridSliver(
-                                  books,
-                                  progress,
-                                  states,
-                                  seconds,
-                                )
-                              else
-                                _listSliver(
-                                  books,
-                                  progress,
-                                  states,
-                                  seconds,
-                                ),
-                              const SliverToBoxAdapter(
-                                child: SizedBox(height: 100),
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          );
-        },
+                    return CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: _header(shelfSnap.data ?? const []),
+                        ),
+                        if (_query.isEmpty &&
+                            _shelfId == null &&
+                            _tagId == null)
+                          ..._continueReading(bookSnap.data!, progress),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 22, 20, 10),
+                            child: Text(
+                              '책 ${books.length}',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                        if (books.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _empty(),
+                          )
+                        else if (_grid)
+                          _gridSliver(books, progress, states, seconds)
+                        else
+                          _listSliver(books, progress, states, seconds),
+                        const SliverToBoxAdapter(
+                          child: SizedBox(height: 100),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
@@ -523,7 +490,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                                 const SizedBox(height: 6),
                                 Text(
                                   '${(value * 100).round()}% 읽음',
-                                  style: Theme.of(context).textTheme.labelSmall,
+                                  style:
+                                      Theme.of(context).textTheme.labelSmall,
                                 ),
                               ],
                             ),
@@ -640,10 +608,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             book.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontWeight: FontWeight.w800,
-              height: 1.2,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w800, height: 1.2),
           ),
           const SizedBox(height: 3),
           Text(
@@ -780,9 +745,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              _query.isEmpty
-                  ? Icons.menu_book_outlined
-                  : Icons.search_off,
+              _query.isEmpty ? Icons.menu_book_outlined : Icons.search_off,
               size: 56,
               color: Theme.of(context).colorScheme.primary,
             ),
@@ -809,28 +772,61 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   Future<void> _newShelf() async {
     final controller = TextEditingController();
-    final name = await showDialog<String>(
+    final name = await showModalBottomSheet<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('책장 추가'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '예: 읽는 중, 완독, 소설',
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            4,
+            20,
+            20 + MediaQuery.viewInsetsOf(sheetContext).bottom,
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '책장 추가',
+                style: Theme.of(sheetContext)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  hintText: '예: 읽는 중, 완독, 소설',
+                ),
+                onSubmitted: (value) => Navigator.of(
+                  sheetContext,
+                ).pop(value.trim()),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                    child: const Text('취소'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: () => Navigator.of(sheetContext).pop(
+                      controller.text.trim(),
+                    ),
+                    child: const Text('추가'),
+                  ),
+                ],
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('추가'),
-          ),
-        ],
-      ),
+        );
+      },
     );
     controller.dispose();
 
@@ -1007,7 +1003,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      for (final shelf in shelfSnap.data ?? const <ShelfRow>[])
+                      for (final shelf
+                          in shelfSnap.data ?? const <ShelfRow>[]) 
                         FilterChip(
                           label: Text(shelf.name),
                           selected: current.contains(shelf.id),
@@ -1041,50 +1038,20 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
-            TextField(
-              decoration: const InputDecoration(
-                labelText: '새 태그',
-                hintText: '입력 후 완료',
-              ),
-              onSubmitted: (value) async {
-                final name = value.trim();
-                if (name.isEmpty) return;
-                final id = await db.addTagIfNew(name);
-                await db.setBookTag(book.id, id, true);
-              },
-            ),
             const SizedBox(height: 22),
-            OutlinedButton.icon(
-              onPressed: () async {
-                Navigator.pop(context);
-                final ok = await showDialog<bool>(
-                  context: this.context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('서재에서 제거'),
-                    content: Text(
-                      '“${book.title}”을(를) 서재에서 제거할까요? 원본 EPUB은 삭제되지 않습니다.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('취소'),
-                      ),
-                      FilledButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('제거'),
-                      ),
-                    ],
-                  ),
-                );
-                if (ok == true) await db.removeBook(book.id);
-              },
-              icon: const Icon(Icons.remove_circle_outline),
+            FilledButton.tonalIcon(
+              onPressed: () => _removeBook(book),
+              icon: const Icon(Icons.delete_outline),
               label: const Text('서재에서 제거'),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _removeBook(LibraryBookRow book) async {
+    Navigator.pop(context);
+    await ref.read(appDatabaseProvider).removeBook(book.id);
   }
 }
