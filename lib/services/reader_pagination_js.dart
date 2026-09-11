@@ -1,531 +1,99 @@
 /// CSS and JavaScript used by the paged EPUB reader.
-///
-/// Text selection is intentionally custom rather than relying on Android WebView's
-/// native selection UI. After a long-press creates a word selection, the same finger
-/// can immediately keep moving to extend the selection. The selection gesture owns
-/// the touch stream until it ends, so the normal page swipe cannot steal it.
+/// Selection is custom so a long-press can immediately become a one-finger range drag.
 const String kPaginationCss = '''
-html {
-  margin: 0 !important;
-  height: 100% !important;
-  overflow: hidden !important;
-}
+html { margin:0 !important; height:100% !important; overflow:hidden !important; }
 body {
-  margin: 0 !important;
-  padding: 0 !important;
-  width: %PAGE_WIDTH_PX%px !important;
-  height: 100vh !important;
-  overflow-x: scroll !important;
-  overflow-y: hidden !important;
-  -webkit-overflow-scrolling: touch !important;
-  column-width: %PAGE_WIDTH_PX%px !important;
-  -webkit-column-width: %PAGE_WIDTH_PX%px !important;
-  column-gap: 0px !important;
-  -webkit-column-gap: 0px !important;
-  column-fill: auto !important;
+  margin:0 !important; padding:0 !important; width:%PAGE_WIDTH_PX%px !important;
+  height:100vh !important; overflow-x:scroll !important; overflow-y:hidden !important;
+  -webkit-overflow-scrolling:touch !important;
+  column-width:%PAGE_WIDTH_PX%px !important; -webkit-column-width:%PAGE_WIDTH_PX%px !important;
+  column-gap:0 !important; -webkit-column-gap:0 !important; column-fill:auto !important;
 }
-body::-webkit-scrollbar { display: none !important; }
-#__reader_content_wrap__ {
-  box-decoration-break: clone !important;
-  -webkit-box-decoration-break: clone !important;
-  box-sizing: border-box !important;
-}
-img, table, figure, svg {
-  break-inside: avoid !important;
-  -webkit-column-break-inside: avoid !important;
-  max-width: 100% !important;
-}
+body::-webkit-scrollbar { display:none !important; }
+#__reader_content_wrap__ { box-sizing:border-box !important; box-decoration-break:clone !important; -webkit-box-decoration-break:clone !important; }
+img,table,figure,svg { break-inside:avoid !important; -webkit-column-break-inside:avoid !important; max-width:100% !important; }
 #__reader_content_wrap__, #__reader_content_wrap__ * {
-  -webkit-user-select: none !important;
-  user-select: none !important;
-  -webkit-touch-callout: none !important;
+  -webkit-user-select:none !important; user-select:none !important; -webkit-touch-callout:none !important;
 }
 ''';
 
 const String kReaderInitJsTemplate = r'''
-(function() {
-  function __readerBoot() {
-    var vp = document.querySelector('meta[name="viewport"]');
-    if (!vp) {
-      vp = document.createElement('meta');
-      vp.setAttribute('name', 'viewport');
-      document.head.insertBefore(vp, document.head.firstChild || null);
-    }
-    vp.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+(function(){
+  function boot(){
+    var vp=document.querySelector('meta[name="viewport"]');
+    if(!vp){vp=document.createElement('meta');vp.name='viewport';document.head.insertBefore(vp,document.head.firstChild||null);}
+    vp.content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
 
-    var wrapId = "__reader_content_wrap__";
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.id = wrapId;
-      while (document.body.firstChild) wrap.appendChild(document.body.firstChild);
-      document.body.appendChild(wrap);
-    }
+    var wrap=document.getElementById('__reader_content_wrap__');
+    if(!wrap){wrap=document.createElement('div');wrap.id='__reader_content_wrap__';while(document.body.firstChild)wrap.appendChild(document.body.firstChild);document.body.appendChild(wrap);}
+    var style=document.getElementById('__reader_override__');
+    if(!style){style=document.createElement('style');style.id='__reader_override__';document.head.appendChild(style);}
+    style.textContent=%CSS%;
 
-    var styleId = "__reader_override__";
-    var styleEl = document.getElementById(styleId);
-    if (!styleEl) {
-      styleEl = document.createElement("style");
-      styleEl.id = styleId;
-      document.head.appendChild(styleEl);
-    }
-    styleEl.textContent = %CSS%;
+    var PAGE_WIDTH=%PAGE_WIDTH_PX%;
+    function box(){return document.body;}
+    function maxX(){return Math.max(0,box().scrollWidth-PAGE_WIDTH);}
+    window.__reader=window.__reader||{};
+    window.__reader.nextPage=function(){var b=box(),m=maxX();if(b.scrollLeft>=m-1)return'chapter-end';b.scrollLeft=Math.min(m,b.scrollLeft+PAGE_WIDTH);return'ok';};
+    window.__reader.prevPage=function(){var b=box();if(b.scrollLeft<=1)return'chapter-start';b.scrollLeft=Math.max(0,b.scrollLeft-PAGE_WIDTH);return'ok';};
+    window.__reader.goToStart=function(){box().scrollLeft=0;};
+    window.__reader.goToEnd=function(){box().scrollLeft=maxX();};
+    window.__reader.goToFraction=function(f){var m=maxX(),p=Math.round((f*m)/PAGE_WIDTH);box().scrollLeft=Math.max(0,Math.min(m,p*PAGE_WIDTH));};
+    window.__reader.clampPosition=function(){var b=box(),m=maxX();b.scrollLeft=Math.max(0,Math.min(m,Math.round(b.scrollLeft/PAGE_WIDTH)*PAGE_WIDTH));};
+    window.__reader.getFraction=function(){var m=maxX();return m<=0?0:box().scrollLeft/m;};
+    window.__reader.getPageLabel=function(){return(Math.round(box().scrollLeft/PAGE_WIDTH)+1)+' / '+Math.max(1,Math.round(box().scrollWidth/PAGE_WIDTH));};
 
-    var PAGE_WIDTH = %PAGE_WIDTH_PX%;
-    function scrollBox() { return document.body; }
-    function maxScrollLeft() { return Math.max(0, scrollBox().scrollWidth - PAGE_WIDTH); }
+    function charOffset(root,node,offset){var r=document.createRange();r.selectNodeContents(root);try{r.setEnd(node,offset);}catch(e){return 0;}return r.toString().length;}
+    function pointAt(root,target){var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),n,c=0;while(n=w.nextNode()){var len=n.nodeValue.length;if(c+len>=target)return{node:n,offset:Math.max(0,target-c)};c+=len;}return n?{node:n,offset:n.nodeValue.length}:null;}
+    function wrapRange(range,id,cls,attr,css){var root=range.commonAncestorContainer;if(root.nodeType===3)root=root.parentNode;var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),a=[],n;while(n=w.nextNode())if(range.intersectsNode(n))a.push(n);for(var i=a.length-1;i>=0;i--){n=a[i];if(!n.parentNode||!n.nodeValue)continue;var s=n===range.startContainer?range.startOffset:0,e=n===range.endContainer?range.endOffset:n.nodeValue.length;if(s>=e)continue;var t=n;if(e<t.nodeValue.length)t=t.splitText(e);if(s>0)t=t.splitText(s);var span=document.createElement('span');span.className=cls;span.setAttribute(attr,String(id));span.style.cssText=css;t.parentNode.insertBefore(span,t);span.appendChild(t);}}
+    function applyHighlight(e){var s=pointAt(wrap,e.start),t=pointAt(wrap,e.end);if(!s||!t)return;var r=document.createRange();try{r.setStart(s.node,s.offset);r.setEnd(t.node,t.offset);}catch(x){return;}wrapRange(r,e.id,'reader-highlight','data-hl-id','background-color:'+e.color+';border-radius:2px;');}
+    function applyMemo(e){var s=pointAt(wrap,e.start),t=pointAt(wrap,e.end);if(!s||!t)return;var r=document.createRange();try{r.setStart(s.node,s.offset);r.setEnd(t.node,t.offset);}catch(x){return;}wrapRange(r,e.id,'reader-memo','data-memo-id','border-bottom:2px dashed rgba(255,145,0,.85);');}
+    if(!window.__readerHighlightsApplied){window.__readerHighlightsApplied=true;(%HIGHLIGHTS_JSON%).forEach(applyHighlight);}
+    if(!window.__readerMemosApplied){window.__readerMemosApplied=true;(%MEMOS_JSON%).forEach(applyMemo);}
+    window.__reader.addHighlight=function(id,s,e,c){applyHighlight({id:id,start:s,end:e,color:c});if(window.__reader.clearCustomSelection)window.__reader.clearCustomSelection();};
+    window.__reader.removeHighlight=function(id){document.querySelectorAll('.reader-highlight[data-hl-id="'+id+'"]').forEach(function(span){var p=span.parentNode;if(!p)return;while(span.firstChild)p.insertBefore(span.firstChild,span);p.removeChild(span);p.normalize();});};
+    window.__reader.addMemo=function(id,s,e){applyMemo({id:id,start:s,end:e});if(window.__reader.clearCustomSelection)window.__reader.clearCustomSelection();};
+    window.__reader.removeMemo=function(id){document.querySelectorAll('.reader-memo[data-memo-id="'+id+'"]').forEach(function(span){var p=span.parentNode;if(!p)return;while(span.firstChild)p.insertBefore(span.firstChild,span);p.removeChild(span);p.normalize();});};
+    window.__reader.clearSelection=function(){if(window.__reader.clearCustomSelection)window.__reader.clearCustomSelection();};
+    window.__reader.scrollToSelector=function(sel){var el=document.querySelector(sel);if(!el)return'not-found';var r=el.getBoundingClientRect(),b=box(),p=Math.max(0,Math.floor((r.left+b.scrollLeft)/PAGE_WIDTH));b.scrollLeft=Math.min(maxX(),p*PAGE_WIDTH);return'ok';};
+    window.__reader.findAndScrollTo=function(query,occ){var w=document.createTreeWalker(wrap,NodeFilter.SHOW_TEXT),n,text='',ranges=[];while(n=w.nextNode()){var s=text.length;text+=n.nodeValue;ranges.push({node:n,start:s,end:text.length});}var q=String(query).toLowerCase(),lower=text.toLowerCase(),idx=-1,c=0,from=0;while((idx=lower.indexOf(q,from))>=0){if(c===occ)break;c++;from=idx+1;}if(idx<0)return'not-found';var target=null,local=0;for(var i=0;i<ranges.length;i++)if(idx>=ranges[i].start&&idx<ranges[i].end){target=ranges[i].node;local=idx-ranges[i].start;break;}if(!target)return'not-found';var r=document.createRange();r.setStart(target,local);r.setEnd(target,Math.min(target.nodeValue.length,local+q.length));var rect=r.getBoundingClientRect(),b=box(),p=Math.max(0,Math.floor((rect.left+b.scrollLeft)/PAGE_WIDTH));b.scrollLeft=Math.min(maxX(),p*PAGE_WIDTH);return'ok';};
 
-    window.__reader = window.__reader || {};
-    window.__reader.nextPage = function() {
-      var box = scrollBox(), max = maxScrollLeft();
-      if (box.scrollLeft >= max - 1) return "chapter-end";
-      box.scrollLeft = Math.min(max, box.scrollLeft + PAGE_WIDTH);
-      return "ok";
-    };
-    window.__reader.prevPage = function() {
-      var box = scrollBox();
-      if (box.scrollLeft <= 1) return "chapter-start";
-      box.scrollLeft = Math.max(0, box.scrollLeft - PAGE_WIDTH);
-      return "ok";
-    };
-    window.__reader.goToStart = function() { scrollBox().scrollLeft = 0; };
-    window.__reader.goToEnd = function() { scrollBox().scrollLeft = maxScrollLeft(); };
-    window.__reader.goToFraction = function(f) {
-      var max = maxScrollLeft();
-      var page = Math.round((f * max) / PAGE_WIDTH);
-      scrollBox().scrollLeft = Math.max(0, Math.min(max, page * PAGE_WIDTH));
-    };
-    window.__reader.clampPosition = function() {
-      var box = scrollBox(), max = maxScrollLeft();
-      var snapped = Math.round(box.scrollLeft / PAGE_WIDTH) * PAGE_WIDTH;
-      box.scrollLeft = Math.max(0, Math.min(max, snapped));
-    };
-    window.__reader.getFraction = function() {
-      var max = maxScrollLeft();
-      return max <= 0 ? 0 : scrollBox().scrollLeft / max;
-    };
-    window.__reader.getPageLabel = function() {
-      var current = Math.round(scrollBox().scrollLeft / PAGE_WIDTH) + 1;
-      var total = Math.max(1, Math.round(scrollBox().scrollWidth / PAGE_WIDTH));
-      return current + " / " + total;
-    };
-
-    function charOffsetOfBoundary(root, node, offset) {
-      var r = document.createRange();
-      r.selectNodeContents(root);
-      try { r.setEnd(node, offset); } catch (e) { return 0; }
-      return r.toString().length;
-    }
-
-    function pointForCharOffset(root, target) {
-      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
-      var count = 0, node;
-      while ((node = walker.nextNode())) {
-        var len = node.nodeValue.length;
-        if (count + len >= target) return { node: node, offset: Math.max(0, target - count) };
-        count += len;
+    if(!window.__readerCustomSelectionBound){
+      window.__readerCustomSelectionBound=true;
+      var sel={startNode:null,startOffset:0,endNode:null,endOffset:0,active:false};
+      var layer=null,startHandle=null,endHandle=null,rectPool=[],longTimer=null,origin=null;
+      var draggingHandle=null,dragging=false,edgeTimer=null,edgeDir=0,edgeY=0,suppressClick=false,raf=0;
+      function ensureLayer(){if(layer&&layer.isConnected)return layer;layer=document.createElement('div');layer.id='__reader_selection_layer__';layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:2147483000;';document.body.appendChild(layer);return layer;}
+      function handle(side){var h=document.createElement('div');h.className='__reader_sel_handle__';h.dataset.side=side;h.style.cssText='position:fixed;width:34px;height:34px;margin:0;pointer-events:auto;touch-action:none;z-index:2147483001;';h.innerHTML='<svg width="34" height="34" viewBox="0 0 34 34"><circle cx="17" cy="17" r="9" fill="#4285F4"/><circle cx="17" cy="17" r="4" fill="white" opacity=".9"/></svg>';return h;}
+      function range(){if(!sel.startNode||!sel.endNode)return null;var r=document.createRange();try{r.setStart(sel.startNode,sel.startOffset);r.setEnd(sel.endNode,sel.endOffset);}catch(e){return null;}return r.collapsed?null:r;}
+      function normalize(){if(!sel.startNode||!sel.endNode)return;var r=document.createRange();try{r.setStart(sel.startNode,sel.startOffset);r.setEnd(sel.endNode,sel.endOffset);}catch(e){return;}if(r.collapsed){var n=sel.startNode,o=sel.startOffset;sel.startNode=sel.endNode;sel.startOffset=sel.endOffset;sel.endNode=n;sel.endOffset=o;}}
+      function render(){var r=range();if(!r){if(startHandle){startHandle.remove();startHandle=null;}if(endHandle){endHandle.remove();endHandle=null;}return;}var rs=r.getClientRects(),l=ensureLayer(),i;
+        for(i=0;i<rs.length;i++){var x=rs[i],el=rectPool[i];if(!el){el=document.createElement('div');el.className='__reader_sel_rect__';el.style.pointerEvents='none';el.style.position='fixed';el.style.background='rgba(66,133,244,.34)';l.appendChild(el);rectPool[i]=el;}el.style.display=x.width>0&&x.height>0?'block':'none';el.style.left=x.left+'px';el.style.top=x.top+'px';el.style.width=x.width+'px';el.style.height=x.height+'px';}
+        for(;i<rectPool.length;i++)rectPool[i].style.display='none';
+        var first=rs[0],last=rs[rs.length-1];if(!startHandle){startHandle=handle('start');l.appendChild(startHandle);bindHandle(startHandle);}if(!endHandle){endHandle=handle('end');l.appendChild(endHandle);bindHandle(endHandle);}startHandle.style.left=(first.left-17)+'px';startHandle.style.top=(first.bottom-7)+'px';endHandle.style.left=(last.right-17)+'px';endHandle.style.top=(last.bottom-7)+'px';
       }
-      if (node) return { node: node, offset: node.nodeValue.length };
-      return null;
+      function scheduleRender(){if(raf)return;raf=requestAnimationFrame(function(){raf=0;render();});}
+      function report(){if(!window.ReaderSelection)return;var r=range();if(!r){ReaderSelection.postMessage('none');return;}var text=r.toString();if(!text.trim()){ReaderSelection.postMessage('none');return;}var s=charOffset(wrap,r.startContainer,r.startOffset),e=charOffset(wrap,r.endContainer,r.endOffset);if(s>e){var t=s;s=e;e=t;}var rect=r.getBoundingClientRect();ReaderSelection.postMessage(JSON.stringify({text:text,start:s,end:e,left:rect.left,top:rect.top,width:rect.width,height:rect.height}));}
+      function clear(){sel.active=false;dragging=false;draggingHandle=null;stopEdge();sel.startNode=sel.endNode=null;for(var i=0;i<rectPool.length;i++)rectPool[i].style.display='none';if(startHandle){startHandle.remove();startHandle=null;}if(endHandle){endHandle.remove();endHandle=null;}if(window.ReaderSelection)ReaderSelection.postMessage('none');}
+      window.__reader.clearCustomSelection=clear;
+      function caret(x,y){var r=null;try{if(document.caretRangeFromPoint)r=document.caretRangeFromPoint(x,y);else if(document.caretPositionFromPoint){var p=document.caretPositionFromPoint(x,y);if(p)r={startContainer:p.offsetNode,startOffset:p.offset};}}catch(e){}if(r&&r.startContainer&&r.startContainer.nodeType===3)return{node:r.startContainer,offset:r.startOffset};return null;}
+      function word(node,offset){var text=node.nodeValue||'';if(window.Intl&&Intl.Segmenter){try{var seg=new Intl.Segmenter(undefined,{granularity:'word'}),it=seg.segment(text)[Symbol.iterator](),v;while(!(v=it.next()).done){var s=v.value;if(offset>=s.index&&offset<=s.index+s.segment.length&&s.segment.trim())return{start:s.index,end:s.index+s.segment.length};}}catch(e){}}var a=offset,b=offset;while(a>0&&!/\s/.test(text[a-1]))a--;while(b<text.length&&!/\s/.test(text[b]))b++;if(a===b)b=Math.min(text.length,offset+1);return{start:a,end:b};}
+      function setEnd(c){if(!c)return;sel.endNode=c.node;sel.endOffset=c.offset;normalize();scheduleRender();}
+      function stopEdge(){if(edgeTimer){clearInterval(edgeTimer);edgeTimer=null;}edgeDir=0;}
+      function edgeStep(){if(!dragging||!edgeDir)return;var b=box(),m=maxX();if(edgeDir>0&&b.scrollLeft<m-1)b.scrollLeft=Math.min(m,b.scrollLeft+PAGE_WIDTH);else if(edgeDir<0&&b.scrollLeft>1)b.scrollLeft=Math.max(0,b.scrollLeft-PAGE_WIDTH);else{stopEdge();return;}var c=caret(edgeDir>0?PAGE_WIDTH-34:34,edgeY);if(c)setEnd(c);}
+      function startEdge(dir,y){edgeDir=dir;edgeY=y;if(edgeTimer)return;edgeStep();edgeTimer=setInterval(edgeStep,140);}
+      function bindHandle(h){h.addEventListener('touchstart',function(e){e.preventDefault();e.stopPropagation();draggingHandle=h.dataset.side;dragging=true;},{passive:false});h.addEventListener('touchmove',function(e){if(!draggingHandle)return;e.preventDefault();e.stopPropagation();var t=e.touches[0],c=caret(t.clientX,t.clientY);if(c){if(draggingHandle==='start'){sel.startNode=c.node;sel.startOffset=c.offset;}else{sel.endNode=c.node;sel.endOffset=c.offset;}normalize();scheduleRender();}},{passive:false});h.addEventListener('touchend',function(e){e.preventDefault();e.stopPropagation();dragging=false;draggingHandle=null;stopEdge();report();},{passive:false});}
+
+      document.body.addEventListener('touchstart',function(e){if(e.touches.length!==1||dragging||sel.active)return;var target=e.target;if(target.closest&&target.closest('.reader-memo,.reader-highlight,a,.__reader_sel_handle__'))return;var t=e.touches[0];origin={x:t.clientX,y:t.clientY};if(longTimer)clearTimeout(longTimer);longTimer=setTimeout(function(){longTimer=null;if(!origin)return;var c=caret(origin.x,origin.y);if(!c)return;var w=word(c.node,c.offset);sel.startNode=c.node;sel.startOffset=w.start;sel.endNode=c.node;sel.endOffset=w.end;sel.active=true;dragging=true;suppressClick=true;render();report();if(navigator.vibrate)navigator.vibrate(10);},330);},{passive:true});
+      document.body.addEventListener('touchmove',function(e){if(!dragging||!sel.active){if(!longTimer||!origin)return;var t0=e.touches[0];if(Math.abs(t0.clientX-origin.x)>8||Math.abs(t0.clientY-origin.y)>8){clearTimeout(longTimer);longTimer=null;origin=null;}return;}e.preventDefault();e.stopPropagation();var t=e.touches[0],edge=38;if(t.clientX>PAGE_WIDTH-edge&&maxX()>box().scrollLeft+1){startEdge(1,t.clientY);return;}if(t.clientX<edge&&box().scrollLeft>1){startEdge(-1,t.clientY);return;}stopEdge();setEnd(caret(t.clientX,t.clientY));},{passive:false});
+      document.body.addEventListener('touchend',function(){if(longTimer){clearTimeout(longTimer);longTimer=null;}origin=null;stopEdge();if(dragging){dragging=false;draggingHandle=null;report();}},{passive:true});
+      document.body.addEventListener('touchcancel',function(){if(longTimer){clearTimeout(longTimer);longTimer=null;}origin=null;stopEdge();if(dragging){dragging=false;draggingHandle=null;report();}},{passive:true});
+      document.addEventListener('click',function(e){if(suppressClick){suppressClick=false;e.preventDefault();e.stopImmediatePropagation();return;}if(sel.active&&!(e.target.closest&&e.target.closest('#__reader_selection_layer__'))){clear();e.preventDefault();e.stopImmediatePropagation();}},true);
     }
 
-    function wrapRangeWithSpan(range, id, className, attrName, styleCss) {
-      var rootEl = range.commonAncestorContainer;
-      if (rootEl.nodeType === 3) rootEl = rootEl.parentNode;
-      var walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, null);
-      var targets = [], node;
-      while ((node = walker.nextNode())) {
-        if (range.intersectsNode(node)) targets.push(node);
-      }
-      for (var i = targets.length - 1; i >= 0; i--) {
-        var n = targets[i];
-        if (!n.parentNode || !n.nodeValue) continue;
-        var startLocal = n === range.startContainer ? range.startOffset : 0;
-        var endLocal = n === range.endContainer ? range.endOffset : n.nodeValue.length;
-        if (startLocal >= endLocal) continue;
-        var target = n;
-        if (endLocal < target.nodeValue.length) target.splitText(endLocal);
-        if (startLocal > 0) target = target.splitText(startLocal);
-        var span = document.createElement("span");
-        span.className = className;
-        span.setAttribute(attrName, String(id));
-        span.style.cssText = styleCss;
-        target.parentNode.insertBefore(span, target);
-        span.appendChild(target);
-      }
-    }
-
-    function applyHighlightEntry(entry) {
-      var start = pointForCharOffset(wrap, entry.start), end = pointForCharOffset(wrap, entry.end);
-      if (!start || !end) return;
-      var range = document.createRange();
-      try { range.setStart(start.node, start.offset); range.setEnd(end.node, end.offset); } catch (e) { return; }
-      wrapRangeWithSpan(range, entry.id, "reader-highlight", "data-hl-id", "background-color:" + entry.color + ";border-radius:2px;");
-    }
-
-    function applyMemoEntry(entry) {
-      var start = pointForCharOffset(wrap, entry.start), end = pointForCharOffset(wrap, entry.end);
-      if (!start || !end) return;
-      var range = document.createRange();
-      try { range.setStart(start.node, start.offset); range.setEnd(end.node, end.offset); } catch (e) { return; }
-      wrapRangeWithSpan(range, entry.id, "reader-memo", "data-memo-id", "border-bottom:2px dashed rgba(255,145,0,0.85);");
-    }
-
-    if (!window.__readerHighlightsApplied) {
-      window.__readerHighlightsApplied = true;
-      var HIGHLIGHTS = %HIGHLIGHTS_JSON%;
-      HIGHLIGHTS.forEach(applyHighlightEntry);
-    }
-    if (!window.__readerMemosApplied) {
-      window.__readerMemosApplied = true;
-      var MEMOS = %MEMOS_JSON%;
-      MEMOS.forEach(applyMemoEntry);
-    }
-
-    window.__reader.addHighlight = function(id, start, end, colorCss) {
-      applyHighlightEntry({ id: id, start: start, end: end, color: colorCss });
-      if (window.__reader.clearCustomSelection) window.__reader.clearCustomSelection();
-    };
-    window.__reader.removeHighlight = function(id) {
-      document.querySelectorAll('.reader-highlight[data-hl-id="' + id + '"]').forEach(function(span) {
-        var parent = span.parentNode;
-        if (!parent) return;
-        while (span.firstChild) parent.insertBefore(span.firstChild, span);
-        parent.removeChild(span);
-        parent.normalize();
-      });
-    };
-    window.__reader.addMemo = function(id, start, end) {
-      applyMemoEntry({ id: id, start: start, end: end });
-      if (window.__reader.clearCustomSelection) window.__reader.clearCustomSelection();
-    };
-    window.__reader.removeMemo = function(id) {
-      document.querySelectorAll('.reader-memo[data-memo-id="' + id + '"]').forEach(function(span) {
-        var parent = span.parentNode;
-        if (!parent) return;
-        while (span.firstChild) parent.insertBefore(span.firstChild, span);
-        parent.removeChild(span);
-        parent.normalize();
-      });
-    };
-    window.__reader.clearSelection = function() {
-      if (window.__reader.clearCustomSelection) window.__reader.clearCustomSelection();
-    };
-    window.__reader.scrollToSelector = function(selector) {
-      var el = document.querySelector(selector);
-      if (!el) return "not-found";
-      var rect = el.getBoundingClientRect(), box = scrollBox();
-      var pageIndex = Math.max(0, Math.floor((rect.left + box.scrollLeft) / PAGE_WIDTH));
-      box.scrollLeft = Math.min(maxScrollLeft(), pageIndex * PAGE_WIDTH);
-      return "ok";
-    };
-
-    window.__reader.findAndScrollTo = function(query, occurrenceIndex) {
-      var walker = document.createTreeWalker(wrap, NodeFilter.SHOW_TEXT, null);
-      var node, fullText = "", ranges = [];
-      while ((node = walker.nextNode())) {
-        var s = fullText.length;
-        fullText += node.nodeValue;
-        ranges.push({ node: node, start: s, end: fullText.length });
-      }
-      var text = fullText.toLowerCase(), q = String(query).toLowerCase();
-      var idx = -1, count = 0, from = 0;
-      while (true) {
-        idx = text.indexOf(q, from);
-        if (idx < 0) break;
-        if (count === occurrenceIndex) break;
-        count++; from = idx + 1;
-      }
-      if (idx < 0) return "not-found";
-      var target = null, local = 0;
-      for (var i = 0; i < ranges.length; i++) {
-        if (idx >= ranges[i].start && idx < ranges[i].end) {
-          target = ranges[i].node; local = idx - ranges[i].start; break;
-        }
-      }
-      if (!target) return "not-found";
-      var range = document.createRange();
-      range.setStart(target, local);
-      range.setEnd(target, Math.min(target.nodeValue.length, local + q.length));
-      var rect = range.getBoundingClientRect(), box = scrollBox();
-      var pageIndex = Math.max(0, Math.floor((rect.left + box.scrollLeft) / PAGE_WIDTH));
-      box.scrollLeft = Math.min(maxScrollLeft(), pageIndex * PAGE_WIDTH);
-      return "ok";
-    };
-
-    // ---- Custom text selection ----
-    // Long-press creates a word selection. Crucially, once the timer fires, the same
-    // finger is promoted to an "end-handle drag". We therefore do not wait for a
-    // second touch on the circular handle. This is the behavior of a native reader
-    // selection gesture that the old implementation was missing.
-    if (!window.__readerCustomSelectionBound) {
-      window.__readerCustomSelectionBound = true;
-      var csel = { startNode: null, startOffset: 0, endNode: null, endOffset: 0, active: false };
-      var overlayLayer = null, startHandle = null, endHandle = null;
-      var longPressTimer = null, longPressOrigin = null;
-      var draggingHandle = null, selectionDrag = false, autoPageLock = false;
-      var suppressNextClick = false;
-
-      function ensureOverlayLayer() {
-        if (overlayLayer && overlayLayer.isConnected) return overlayLayer;
-        overlayLayer = document.createElement("div");
-        overlayLayer.id = "__reader_selection_layer__";
-        overlayLayer.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:2147483000;";
-        document.body.appendChild(overlayLayer);
-        return overlayLayer;
-      }
-      function makeHandle(side) {
-        var h = document.createElement("div");
-        h.className = "__reader_sel_handle__";
-        h.dataset.side = side;
-        h.style.cssText = "position:fixed;width:28px;height:28px;pointer-events:auto;z-index:2147483001;touch-action:none;";
-        h.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="8" fill="#4285F4"/></svg>';
-        return h;
-      }
-      function currentRange() {
-        if (!csel.startNode || !csel.endNode) return null;
-        var r = document.createRange();
-        try { r.setStart(csel.startNode, csel.startOffset); r.setEnd(csel.endNode, csel.endOffset); } catch (e) { return null; }
-        return r.collapsed ? null : r;
-      }
-      function normalizeOrder() {
-        if (!csel.startNode || !csel.endNode) return;
-        var r = document.createRange();
-        try { r.setStart(csel.startNode, csel.startOffset); r.setEnd(csel.endNode, csel.endOffset); } catch (e) { return; }
-        if (r.collapsed) {
-          var n = csel.startNode, o = csel.startOffset;
-          csel.startNode = csel.endNode; csel.startOffset = csel.endOffset;
-          csel.endNode = n; csel.endOffset = o;
-        }
-      }
-      function renderOverlay() {
-        var range = currentRange(), layer = ensureOverlayLayer();
-        layer.querySelectorAll(".__reader_sel_rect__").forEach(function(x) { x.remove(); });
-        if (!range) {
-          if (startHandle) { startHandle.remove(); startHandle = null; }
-          if (endHandle) { endHandle.remove(); endHandle = null; }
-          return;
-        }
-        var rects = range.getClientRects();
-        for (var i = 0; i < rects.length; i++) {
-          var r = rects[i];
-          if (r.width <= 0 || r.height <= 0) continue;
-          var box = document.createElement("div");
-          box.className = "__reader_sel_rect__";
-          box.style.cssText = "position:fixed;left:" + r.left + "px;top:" + r.top + "px;width:" + r.width + "px;height:" + r.height + "px;background:rgba(66,133,244,0.35);pointer-events:none;";
-          layer.appendChild(box);
-        }
-        if (rects.length) {
-          var first = rects[0], last = rects[rects.length - 1];
-          if (!startHandle) { startHandle = makeHandle("start"); layer.appendChild(startHandle); bindHandleEvents(startHandle); }
-          if (!endHandle) { endHandle = makeHandle("end"); layer.appendChild(endHandle); }
-          startHandle.style.left = (first.left - 14) + "px";
-          startHandle.style.top = (first.bottom - 6) + "px";
-          endHandle.style.left = (last.right - 14) + "px";
-          endHandle.style.top = (last.bottom - 6) + "px";
-        }
-      }
-      function reportSelection() {
-        if (!window.ReaderSelection) return;
-        var range = currentRange();
-        if (!range) { ReaderSelection.postMessage("none"); return; }
-        var text = range.toString();
-        if (!text || !text.trim()) { ReaderSelection.postMessage("none"); return; }
-        var start = charOffsetOfBoundary(wrap, range.startContainer, range.startOffset);
-        var end = charOffsetOfBoundary(wrap, range.endContainer, range.endOffset);
-        if (start > end) { var t = start; start = end; end = t; }
-        var rect = range.getBoundingClientRect();
-        ReaderSelection.postMessage(JSON.stringify({text:text,start:start,end:end,left:rect.left,top:rect.top,width:rect.width,height:rect.height}));
-      }
-      function clearCustomSelection() {
-        csel.active = false; selectionDrag = false; draggingHandle = null; autoPageLock = false;
-        csel.startNode = csel.endNode = null;
-        if (overlayLayer) overlayLayer.querySelectorAll(".__reader_sel_rect__").forEach(function(x) { x.remove(); });
-        if (startHandle) { startHandle.remove(); startHandle = null; }
-        if (endHandle) { endHandle.remove(); endHandle = null; }
-        if (window.ReaderSelection) ReaderSelection.postMessage("none");
-      }
-      window.__reader.clearCustomSelection = clearCustomSelection;
-
-      function caretAt(x, y) {
-        var fn = document.caretRangeFromPoint || document.caretPositionFromPoint;
-        if (!fn) return null;
-        try {
-          var r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : document.caretPositionFromPoint(x, y);
-          if (r && r.startContainer && r.startContainer.nodeType === 3) return {node:r.startContainer,offset:r.startOffset};
-          if (r && r.offsetNode && r.offsetNode.nodeType === 3) return {node:r.offsetNode,offset:r.offset};
-        } catch (e) {}
-        return null;
-      }
-      function wordBoundsAround(node, offset) {
-        var text = node.nodeValue || "";
-        if (window.Intl && Intl.Segmenter) {
-          try {
-            var seg = new Intl.Segmenter(undefined, {granularity:"word"});
-            var it = seg.segment(text)[Symbol.iterator](), item;
-            while (!(item = it.next()).done) {
-              var s = item.value;
-              if (offset >= s.index && offset <= s.index + s.segment.length && s.segment.trim().length) return {start:s.index,end:s.index+s.segment.length};
-            }
-          } catch (e) {}
-        }
-        var boundary = function(ch) { return /\s/.test(ch); };
-        var start = offset, end = offset;
-        while (start > 0 && !boundary(text[start-1])) start--;
-        while (end < text.length && !boundary(text[end])) end++;
-        if (start === end) end = Math.min(text.length, offset + 1);
-        return {start:start,end:end};
-      }
-      function setEndAtCaret(caret) {
-        if (!caret) return;
-        csel.endNode = caret.node; csel.endOffset = caret.offset;
-        normalizeOrder(); renderOverlay(); reportSelection();
-      }
-      function bindHandleEvents(handle) {
-        handle.addEventListener("touchstart", function(e) {
-          e.preventDefault(); e.stopPropagation(); draggingHandle = handle.dataset.side;
-        }, {passive:false});
-        handle.addEventListener("touchmove", function(e) {
-          if (!draggingHandle) return;
-          e.preventDefault(); e.stopPropagation();
-          var t = e.touches[0];
-          var caret = caretAt(t.clientX, t.clientY);
-          if (caret) {
-            if (draggingHandle === "start") { csel.startNode = caret.node; csel.startOffset = caret.offset; }
-            else { csel.endNode = caret.node; csel.endOffset = caret.offset; }
-            normalizeOrder(); renderOverlay();
-          }
-        }, {passive:false});
-        handle.addEventListener("touchend", function(e) {
-          e.preventDefault(); e.stopPropagation(); draggingHandle = null; reportSelection();
-        }, {passive:false});
-      }
-
-      // The important path: after long-press, touchmove becomes the end-handle drag.
-      // preventDefault() is only used while selection is active, so ordinary page swiping
-      // remains unchanged before a selection is created.
-      document.body.addEventListener("touchstart", function(e) {
-        if (draggingHandle || selectionDrag) return;
-        if (e.touches.length !== 1) return;
-        var target = e.target;
-        if (target.closest && target.closest(".reader-memo, .reader-highlight, a, .__reader_sel_handle__")) {
-          longPressOrigin = null; return;
-        }
-        var t = e.touches[0];
-        longPressOrigin = {x:t.clientX,y:t.clientY};
-        if (longPressTimer) clearTimeout(longPressTimer);
-        longPressTimer = setTimeout(function() {
-          longPressTimer = null;
-          if (!longPressOrigin) return;
-          var caret = caretAt(longPressOrigin.x, longPressOrigin.y);
-          if (!caret) return;
-          var bounds = wordBoundsAround(caret.node, caret.offset);
-          csel.startNode = caret.node; csel.startOffset = bounds.start;
-          csel.endNode = caret.node; csel.endOffset = bounds.end;
-          csel.active = true;
-          selectionDrag = true;
-          suppressNextClick = true;
-          renderOverlay(); reportSelection();
-          if (navigator.vibrate) navigator.vibrate(10);
-        }, 380);
-      }, {passive:true});
-
-      document.body.addEventListener("touchmove", function(e) {
-        if (!selectionDrag || !csel.active) {
-          if (!longPressTimer || !longPressOrigin) return;
-          var t0 = e.touches[0];
-          if (Math.abs(t0.clientX-longPressOrigin.x) > 10 || Math.abs(t0.clientY-longPressOrigin.y) > 10) {
-            clearTimeout(longPressTimer); longPressTimer = null;
-          }
-          return;
-        }
-        e.preventDefault();
-        e.stopPropagation();
-        var t = e.touches[0], box = scrollBox(), edge = 26, max = maxScrollLeft();
-        if (t.clientX > PAGE_WIDTH-edge && box.scrollLeft < max-1) {
-          if (!autoPageLock) {
-            autoPageLock = true;
-            box.scrollLeft = Math.min(max, box.scrollLeft + PAGE_WIDTH);
-            setTimeout(function() {
-              if (!selectionDrag) return;
-              var c = caretAt(PAGE_WIDTH-edge-2, t.clientY);
-              if (c) setEndAtCaret(c);
-            }, 50);
-          }
-          return;
-        }
-        if (t.clientX < edge && box.scrollLeft > 1) {
-          if (!autoPageLock) {
-            autoPageLock = true;
-            box.scrollLeft = Math.max(0, box.scrollLeft - PAGE_WIDTH);
-            setTimeout(function() {
-              if (!selectionDrag) return;
-              var c = caretAt(edge+2, t.clientY);
-              if (c) setEndAtCaret(c);
-            }, 50);
-          }
-          return;
-        }
-        autoPageLock = false;
-        setEndAtCaret(caretAt(t.clientX, t.clientY));
-      }, {passive:false});
-
-      document.body.addEventListener("touchend", function() {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-        longPressOrigin = null;
-        if (selectionDrag) { selectionDrag = false; reportSelection(); }
-      }, {passive:true});
-      document.body.addEventListener("touchcancel", function() {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
-        longPressOrigin = null;
-        if (selectionDrag) { selectionDrag = false; reportSelection(); }
-      }, {passive:true});
-
-      document.addEventListener("click", function(e) {
-        if (suppressNextClick) {
-          suppressNextClick = false;
-          e.preventDefault(); e.stopImmediatePropagation(); return;
-        }
-        if (csel.active && !(e.target.closest && e.target.closest("#__reader_selection_layer__"))) {
-          clearCustomSelection(); e.preventDefault(); e.stopImmediatePropagation();
-        }
-      }, true);
-    }
-
-    if (!window.__readerTapBound) {
-      window.__readerTapBound = true;
-      document.addEventListener("click", function(e) {
-        var memo = e.target.closest && e.target.closest(".reader-memo");
-        if (memo) { if (window.ReaderMemoTap) ReaderMemoTap.postMessage(memo.getAttribute("data-memo-id")); return; }
-        var hl = e.target.closest && e.target.closest(".reader-highlight");
-        if (hl) { if (window.ReaderHighlightTap) ReaderHighlightTap.postMessage(hl.getAttribute("data-hl-id")); return; }
-        if (e.target.closest && e.target.closest("a")) return;
-        var x = e.clientX;
-        var zone = x < PAGE_WIDTH*0.3 ? "left" : (x > PAGE_WIDTH*0.7 ? "right" : "center");
-        if (window.ReaderTap) ReaderTap.postMessage(zone);
-      });
-    }
-
-    if (!window.__readerSnapBound) {
-      window.__readerSnapBound = true;
-      var isTouching = false, snapTimer = null;
-      function scheduleSnap() {
-        if (snapTimer) clearTimeout(snapTimer);
-        snapTimer = setTimeout(function() {
-          if (isTouching) return;
-          var box = scrollBox(), max = maxScrollLeft();
-          var target = Math.max(0, Math.min(max, Math.round(box.scrollLeft/PAGE_WIDTH)*PAGE_WIDTH));
-          if (Math.abs(box.scrollLeft-target)>1) box.scrollTo({left:target,behavior:"smooth"});
-          if (window.ReaderTap) ReaderTap.postMessage("settled");
-        }, 150);
-      }
-      document.body.addEventListener("touchstart", function() { isTouching=true; if(snapTimer) clearTimeout(snapTimer); }, {passive:true});
-      document.body.addEventListener("touchend", function() { isTouching=false; scheduleSnap(); }, {passive:true});
-      document.body.addEventListener("touchcancel", function() { isTouching=false; scheduleSnap(); }, {passive:true});
-      document.body.addEventListener("scroll", scheduleSnap, {passive:true});
-    }
+    if(!window.__readerTapBound){window.__readerTapBound=true;document.addEventListener('click',function(e){var memo=e.target.closest&&e.target.closest('.reader-memo');if(memo){if(window.ReaderMemoTap)ReaderMemoTap.postMessage(memo.getAttribute('data-memo-id'));return;}var hl=e.target.closest&&e.target.closest('.reader-highlight');if(hl){if(window.ReaderHighlightTap)ReaderHighlightTap.postMessage(hl.getAttribute('data-hl-id'));return;}if(e.target.closest&&e.target.closest('a'))return;var x=e.clientX;ReaderTap.postMessage(x<PAGE_WIDTH*.3?'left':x>PAGE_WIDTH*.7?'right':'center');});}
+    if(!window.__readerSnapBound){window.__readerSnapBound=true;var touching=false,timer=null;function snap(){if(touching||dragging)return;if(timer)clearTimeout(timer);timer=setTimeout(function(){if(touching||dragging)return;var b=box(),m=maxX(),to=Math.max(0,Math.min(m,Math.round(b.scrollLeft/PAGE_WIDTH)*PAGE_WIDTH));if(Math.abs(b.scrollLeft-to)>1)b.scrollTo({left:to,behavior:'smooth'});if(window.ReaderTap)ReaderTap.postMessage('settled');},180);}document.body.addEventListener('touchstart',function(){touching=true;if(timer)clearTimeout(timer);},{passive:true});document.body.addEventListener('touchend',function(){touching=false;snap();},{passive:true});document.body.addEventListener('touchcancel',function(){touching=false;snap();},{passive:true});document.body.addEventListener('scroll',snap,{passive:true});}
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", __readerBoot);
-  else __readerBoot();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 ''';
