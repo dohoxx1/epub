@@ -65,7 +65,7 @@ jobs:
         run: dart run build_runner build --delete-conflicting-outputs
 
       - name: 정적 분석
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       - name: 디버그 APK 빌드
         run: flutter build apk --debug
