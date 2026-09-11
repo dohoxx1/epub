@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -35,7 +34,8 @@ class GoogleDriveSyncService {
   Future<GoogleSignInAccount> signIn() async {
     await _initialize();
     final account = await _signIn.authenticate();
-    final authorization = await account.authorizationClient.authorizeScopes(_scopes);
+    final authorization =
+        await account.authorizationClient.authorizeScopes(_scopes);
     _drive = drive.DriveApi(authorization.authClient(scopes: _scopes));
     _account = account;
     return account;
@@ -46,7 +46,8 @@ class GoogleDriveSyncService {
     final account = await _signIn.attemptLightweightAuthentication();
     if (account == null) return null;
 
-    final authorization = await account.authorizationClient.authorizationForScopes(_scopes);
+    final authorization =
+        await account.authorizationClient.authorizationForScopes(_scopes);
     if (authorization == null) return null;
     _drive = drive.DriveApi(authorization.authClient(scopes: _scopes));
     _account = account;
@@ -73,7 +74,6 @@ class GoogleDriveSyncService {
     return api;
   }
 
-  /// 지정한 Drive 폴더의 바로 아래 폴더/파일을 반환한다.
   Future<List<drive.File>> listChildren(String folderId) async {
     final api = await _api();
     final result = <drive.File>[];
@@ -87,7 +87,8 @@ class GoogleDriveSyncService {
         spaces: 'drive',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true,
-        $fields: 'nextPageToken,files(id,name,mimeType,parents,modifiedTime,size,md5Checksum,trashed)',
+        $fields:
+            'nextPageToken,files(id,name,mimeType,parents,modifiedTime,size,md5Checksum,trashed)',
       );
       result.addAll(response.files ?? const []);
       pageToken = response.nextPageToken;
@@ -95,7 +96,6 @@ class GoogleDriveSyncService {
     return result;
   }
 
-  /// Drive 폴더 전체를 상대경로 -> 메타데이터로 평탄화한다.
   Future<Map<String, drive.File>> _readDriveTree(String rootId) async {
     final result = <String, drive.File>{};
     final queue = <({String id, String path})>[(id: rootId, path: '')];
@@ -105,9 +105,11 @@ class GoogleDriveSyncService {
       final children = await listChildren(current.id);
       for (final child in children) {
         final name = child.name;
-        final relative = current.path.isEmpty ? name! : p.join(current.path, name!);
+        if (name == null || child.id == null) continue;
+        final relative =
+            current.path.isEmpty ? name : p.join(current.path, name);
         result[relative] = child;
-        if (child.mimeType == _folderMime && child.id != null) {
+        if (child.mimeType == _folderMime) {
           queue.add((id: child.id!, path: relative));
         }
       }
@@ -128,7 +130,9 @@ class GoogleDriveSyncService {
       includeItemsFromAllDrives: true,
       $fields: 'files(id,name)',
     );
-    final existing = response.files?.firstOrNull;
+    final existing = response.files == null || response.files!.isEmpty
+        ? null
+        : response.files!.first;
     if (existing?.id != null) return existing!.id!;
 
     final created = await api.files.create(
@@ -161,16 +165,15 @@ class GoogleDriveSyncService {
     return directory.list(recursive: true, followLinks: false).toList();
   }
 
-  Future<String> _md5(File file) async => (await md5.bind(file.openRead()).first).toString();
+  Future<String> _md5(File file) async =>
+      (await md5.bind(file.openRead()).first).toString();
 
   Future<void> _downloadFile(
     drive.DriveApi api,
     drive.File remote,
     File destination,
   ) async {
-    final parent = await destination.parent.create(recursive: true);
-    if (!await parent.exists()) return;
-
+    await destination.parent.create(recursive: true);
     final result = await api.files.get(
       remote.id!,
       supportsAllDrives: true,
@@ -248,19 +251,19 @@ class GoogleDriveSyncService {
   Future<void> _saveState(Map<String, dynamic> state) async {
     final file = await _stateFile();
     final temp = File('${file.path}.tmp');
-    await temp.writeAsString(const JsonEncoder.withIndent('  ').convert(state));
+    await temp.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(state),
+    );
     if (await file.exists()) await file.delete();
     await temp.rename(file.path);
   }
 
   /// 로컬 폴더 ↔ Drive 폴더 전체를 동기화한다.
   ///
-  /// - 처음에는 전체 트리를 1회 비교한다.
-  /// - 이후에는 저장된 크기/수정시각/해시를 사용해 변경된 파일만 전송한다.
-  /// - 양쪽이 동시에 변경된 경우 로컬 파일을 `.sync-conflict-날짜`로 보존한 뒤
-  ///   Drive 버전을 원래 경로에 내려 데이터 손실을 피한다.
-  /// - 삭제는 기본적으로 전파하지 않는다. 한쪽에서 실수로 삭제해도 다음 동기화에서
-  ///   파일이 살아 있는 쪽을 기준으로 복구할 수 있도록 하는 안전한 정책이다.
+  /// 처음에는 전체 트리를 1회 비교하고, 이후에는 저장된 크기/수정시각/해시를
+  /// 이용해 변경된 파일만 전송한다. 양쪽이 동시에 변경된 파일은 로컬 사본을
+  /// 충돌 파일로 보존한 뒤 Drive 버전을 원래 경로에 내려 데이터 손실을 피한다.
+  /// 삭제는 기본적으로 전파하지 않는다.
   Future<DriveSyncResult> syncFolder({
     required String localRoot,
     required String driveFolderId,
@@ -272,8 +275,12 @@ class GoogleDriveSyncService {
     final state = await _loadState();
     final roots = Map<String, dynamic>.from(state['roots'] as Map? ?? {});
     final stateKey = '$localRootPath::$driveFolderId';
-    final previous = Map<String, dynamic>.from(roots[stateKey] as Map? ?? {});
-    final entries = Map<String, dynamic>.from(previous['entries'] as Map? ?? {});
+    final previous = Map<String, dynamic>.from(
+      roots[stateKey] as Map? ?? {},
+    );
+    final entries = Map<String, dynamic>.from(
+      previous['entries'] as Map? ?? {},
+    );
 
     var uploaded = 0;
     var downloaded = 0;
@@ -294,18 +301,23 @@ class GoogleDriveSyncService {
     for (final relative in sortedPaths) {
       final local = localFiles[relative];
       final remote = driveTree[relative];
-      final old = Map<String, dynamic>.from(entries[relative] as Map? ?? {});
+      final old = Map<String, dynamic>.from(
+        entries[relative] as Map? ?? {},
+      );
 
       if (remote?.mimeType == _folderMime) continue;
 
       if (local != null && remote == null) {
-        final parent = await _ensureDrivePath(api, driveFolderId, p.dirname(relative));
+        final parent = await _ensureDrivePath(
+          api,
+          driveFolderId,
+          p.dirname(relative),
+        );
         final created = await _uploadFile(api, local, parent);
-        final digest = await _md5(local);
         entries[relative] = _entry(
           driveId: created.id!,
           local: local,
-          localMd5: digest,
+          localMd5: await _md5(local),
           remote: created,
         );
         uploaded++;
@@ -313,12 +325,8 @@ class GoogleDriveSyncService {
       }
 
       if (local == null && remote != null) {
-        if (remote.id == null) continue;
+        if (remote.id == null || remote.mimeType == _folderMime) continue;
         final destination = File(p.join(localRootPath, relative));
-        if (remote.mimeType == _folderMime) {
-          await destination.create(recursive: true);
-          continue;
-        }
         await _downloadFile(api, remote, destination);
         entries[relative] = _entry(
           driveId: remote.id!,
@@ -338,7 +346,9 @@ class GoogleDriveSyncService {
       final localSize = localStat.size;
       final previousLocalModified = (old['localModified'] as num?)?.toInt();
       final previousLocalSize = (old['localSize'] as num?)?.toInt();
-      final previousRemoteModified = DateTime.tryParse(old['remoteModified']?.toString() ?? '');
+      final previousRemoteModified = DateTime.tryParse(
+        old['remoteModified']?.toString() ?? '',
+      );
       final remoteModified = remote.modifiedTime;
 
       final localChanged = previousLocalModified == null ||
@@ -346,7 +356,9 @@ class GoogleDriveSyncService {
           localModified != previousLocalModified ||
           localSize != previousLocalSize;
       final remoteChanged = previousRemoteModified == null ||
-          (remoteModified != null && remoteModified.millisecondsSinceEpoch != previousRemoteModified.millisecondsSinceEpoch);
+          (remoteModified != null &&
+              remoteModified.millisecondsSinceEpoch !=
+                  previousRemoteModified.millisecondsSinceEpoch);
 
       if (!localChanged && !remoteChanged) {
         unchanged++;
@@ -366,7 +378,15 @@ class GoogleDriveSyncService {
       }
 
       if (localChanged && !remoteChanged) {
-        final updated = await _uploadFile(api, local, p.dirname(remote.parents?.first ?? driveFolderId), existingId: remote.id);
+        final parentId = remote.parents?.isNotEmpty == true
+            ? remote.parents!.first
+            : driveFolderId;
+        final updated = await _uploadFile(
+          api,
+          local,
+          parentId,
+          existingId: remote.id,
+        );
         entries[relative] = _entry(
           driveId: updated.id!,
           local: local,
@@ -389,7 +409,6 @@ class GoogleDriveSyncService {
         continue;
       }
 
-      // 양쪽 모두 변경된 경우: 로컬 버전을 보존하고 Drive 버전을 원래 이름으로 받는다.
       final stamp = DateTime.now().millisecondsSinceEpoch;
       final conflict = File('${local.path}.sync-conflict-$stamp.epub');
       await local.copy(conflict.path);
@@ -437,7 +456,8 @@ class GoogleDriveSyncService {
     };
   }
 
-  String _escapeQuery(String value) => value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+  String _escapeQuery(String value) =>
+      value.replaceAll('\\', '\\\\').replaceAll("'", "\\'");
 }
 
 class DriveSyncResult {
