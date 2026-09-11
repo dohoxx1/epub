@@ -21,26 +21,16 @@ String buildReaderOverrideCss(ReaderSettings s) {
         "body, body * { font-family: ${s.fontFamily}, sans-serif !important; }");
   }
   if (s.fontSizePercent != null) {
-    // body가 아니라 wrapper(#__reader_content_wrap__)에 zoom을 건다. body는
-    // 컬럼(페이지) 폭 계산 기준이 되는 요소라서, 여기에 zoom을 직접 걸면 실제
-    // 렌더링되는 컬럼 폭이 window.innerWidth와 어긋나 탭으로 넘길 때 페이지
-    // 사이에 어중간하게 걸치는 문제가 생긴다(실제 겪은 버그). wrapper에만 걸면
-    // 컬럼 경계(body 기준)는 그대로 두고 그 안의 내용만 확대/축소된다.
     buffer.writeln(
         '#__reader_content_wrap__ { zoom: ${s.fontSizePercent}% !important; }');
   }
   if (s.horizontalMarginPx != null) {
     final px = s.horizontalMarginPx!.toStringAsFixed(0);
-    // body가 아니라 JS가 만든 wrapper(#__reader_content_wrap__)에 여백을 준다.
-    // body에 직접 padding을 주면 컬럼(페이지) 폭 계산과 서로 간섭하는 문제가 있어서
-    // 컬럼 계산 기준(body)과 여백 적용 대상(wrapper)을 완전히 분리했다.
     buffer.writeln(
         '#__reader_content_wrap__ { padding-left: ${px}px !important; padding-right: ${px}px !important; }');
   }
   if (s.verticalMarginPx != null) {
     final px = s.verticalMarginPx!.toStringAsFixed(0);
-    // 마찬가지로 wrapper에만 적용. box-decoration-break:clone(kPaginationCss에서 설정)
-    // 덕분에 이 여백이 첫/마지막 페이지뿐 아니라 모든 페이지 상하에 똑같이 반복된다.
     buffer.writeln(
         '#__reader_content_wrap__ { padding-top: ${px}px !important; padding-bottom: ${px}px !important; }');
   }
@@ -53,36 +43,6 @@ String buildReaderOverrideCss(ReaderSettings s) {
     buffer.writeln(
         'p { margin-top: 0 !important; margin-bottom: ${px}px !important; }');
   }
-
-  // 선택이 끝난 뒤에도 별도의 작은 핸들을 다시 찾아 잡지 않도록 한다.
-  // end 핸들의 실제 터치 영역만 화면 전체로 확장하고, 시각적인 핸들은 끝점에
-  // 그대로 표시한다. 따라서 선택 상태에서 다음 터치는 곧바로 "선택 계속"이 된다.
-  buffer.writeln('''
-.__reader_sel_handle__[data-side="end"] {
-  width: 100vw !important;
-  height: 100vh !important;
-  transform: translate(calc(-50vw + 17px), calc(-50vh + 7px)) !important;
-  background: transparent !important;
-}
-.__reader_sel_handle__[data-side="end"] svg {
-  opacity: 0 !important;
-}
-.__reader_sel_handle__[data-side="end"]::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  margin-top: -9px;
-  border-radius: 50%;
-  background: #4285F4;
-  box-shadow: inset 0 0 0 4px rgba(255,255,255,.9);
-  pointer-events: none;
-}
-''');
-
   return buffer.toString();
 }
 
