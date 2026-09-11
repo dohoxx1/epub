@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/painting.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/library_screen.dart';
 
 void main() {
+  // EPUB 표지처럼 작은 로컬 이미지가 많은 서재에서 과도한 디코드/캐시 메모리 사용을 막는다.
+  // Image.file의 cacheWidth와 함께 사용하며, 기본 ImageCache의 합리적인 상한은 유지한다.
+  WidgetsFlutterBinding.ensureInitialized();
+  PaintingBinding.instance.imageCache.maximumSize = 300;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 80 << 20;
   runApp(const ProviderScope(child: EpubReaderApp()));
 }
 
@@ -56,7 +62,8 @@ class EpubReaderApp extends StatelessWidget {
       scaffoldBackgroundColor: scheme.surface,
       fontFamily: 'sans-serif',
       visualDensity: VisualDensity.standard,
-      splashFactory: InkSparkle.splashFactory,
+      // InkSparkle의 셰이더/애니메이션 비용을 줄이고 일반적인 ripple로 통일한다.
+      splashFactory: InkRipple.splashFactory,
       appBarTheme: AppBarTheme(
         centerTitle: false,
         elevation: 0,
