@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/reader_settings.dart';
 
 /// 리더 화면 하단에서 여는 설정 시트.
-/// 값이 바뀔 때마다 onChanged로 즉시 알려서 (슬라이더 드래그 중에도) 실시간 미리보기가 되게 한다.
+/// 슬라이더를 드래그하는 동안 WebView 전체를 재주입하지 않도록 외부 알림을 짧게 디바운스한다.
 class ReaderSettingsSheet extends StatefulWidget {
   final ReaderSettings initial;
   final ValueChanged<ReaderSettings> onChanged;
@@ -21,10 +21,25 @@ class ReaderSettingsSheet extends StatefulWidget {
 
 class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late ReaderSettings _s = widget.initial;
+  Timer? _notifyTimer;
+  ReaderSettings? _pendingNotification;
 
   void _update(ReaderSettings Function(ReaderSettings) fn) {
-    setState(() => _s = fn(_s));
-    widget.onChanged(_s);
+    final next = fn(_s);
+    setState(() => _s = next);
+    _pendingNotification = next;
+    _notifyTimer?.cancel();
+    _notifyTimer = Timer(const Duration(milliseconds: 120), () {
+      final pending = _pendingNotification;
+      _pendingNotification = null;
+      if (pending != null && mounted) widget.onChanged(pending);
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifyTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -69,7 +84,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 폰트 ----
   Widget _buildFontSection() {
     return _SectionLabel(
       title: '폰트',
@@ -79,8 +93,9 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         children: kFontChoices.map((choice) {
           final (label, cssValue) = choice;
           final isOriginal = cssValue.isEmpty;
-          final selected =
-              isOriginal ? _s.fontFamily == null : _s.fontFamily == cssValue;
+          final selected = isOriginal
+              ? _s.fontFamily == null
+              : _s.fontFamily == cssValue;
           return ChoiceChip(
             label: Text(label),
             selected: selected,
@@ -93,7 +108,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 글자 크기 ----
   Widget _buildFontSizeSection() {
     final useOriginal = _s.fontSizePercent == null;
     final value = _s.fontSizePercent ?? 100;
@@ -118,7 +132,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 좌우 여백 ----
   Widget _buildMarginSection() {
     final useOriginal = _s.horizontalMarginPx == null;
     final value = _s.horizontalMarginPx ?? 16;
@@ -143,7 +156,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 상하 여백 ----
   Widget _buildVerticalMarginSection() {
     final useOriginal = _s.verticalMarginPx == null;
     final value = _s.verticalMarginPx ?? 16;
@@ -167,7 +179,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 줄 간격 ----
   Widget _buildLineHeightSection() {
     final useOriginal = _s.lineHeightPercent == null;
     final value = _s.lineHeightPercent ?? 150;
@@ -192,7 +203,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 문단 간격 ----
   Widget _buildParagraphSpacingSection() {
     final useOriginal = _s.paragraphSpacingPx == null;
     final value = _s.paragraphSpacingPx ?? 12;
@@ -217,7 +227,6 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     );
   }
 
-  // ---- 테마 (원본/라이트/다크/사용자 지정 - 배경색+글자색) ----
   Widget _buildThemeSection() {
     return _SectionLabel(
       title: '테마',
@@ -322,8 +331,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-/// 슬라이더 좌우에 -/+ 버튼을 붙여, 드래그 없이도 한 스텝씩 정밀하게 조절할 수 있게 해주는 위젯.
-/// 길게 누르고 있으면 연속으로 증가/감소한다 (IconButton의 onLongPress 대신 GestureDetector로 타이머 반복 구현).
 class _AdjustableSlider extends StatefulWidget {
   final double value;
   final double min;
@@ -359,7 +366,7 @@ class _AdjustableSliderState extends State<_AdjustableSlider> {
   }
 
   void _startRepeating(double direction) {
-    _step(direction); // 즉시 1스텝 반응
+    _step(direction);
     _repeatTimer?.cancel();
     _repeatTimer = Timer.periodic(
         const Duration(milliseconds: 180), (_) => _step(direction));
@@ -456,7 +463,6 @@ class _StepButton extends StatelessWidget {
   }
 }
 
-/// "원본 사용" on/off 스위치 - 요구사항: 모든 항목에 원본 CSS를 따르는 옵션 제공.
 class _OriginalToggle extends StatelessWidget {
   final bool useOriginal;
   final ValueChanged<bool> onChanged;
@@ -469,10 +475,7 @@ class _OriginalToggle extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text('원본 사용', style: Theme.of(context).textTheme.bodySmall),
-        Switch(
-          value: useOriginal,
-          onChanged: onChanged,
-        ),
+        Switch(value: useOriginal, onChanged: onChanged),
       ],
     );
   }
