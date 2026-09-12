@@ -19,5 +19,3 @@ analyzer:
 
 linter:
   rules:
-    # _addFile is intentionally kept as a future single-file import action.
-    unused_element: false
