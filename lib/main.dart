@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'screens/library_screen.dart';
+import 'screens/redesigned_library_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,7 +50,6 @@ class EpubReaderApp extends StatelessWidget {
       onInverseSurface: dark ? _ink : _darkInk,
       inversePrimary: dark ? _sage : const Color(0xFFB7C5B0),
     );
-
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
@@ -65,97 +64,25 @@ class EpubReaderApp extends StatelessWidget {
         backgroundColor: Colors.transparent,
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
-        titleTextStyle: TextStyle(
-          color: scheme.onSurface,
-          fontSize: 26,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -.55,
-        ),
+        titleTextStyle: TextStyle(color: scheme.onSurface, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -.55),
       ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        color: scheme.surfaceContainerHighest.withValues(alpha: dark ? .72 : .68),
-        surfaceTintColor: Colors.transparent,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(18)),
-        ),
-      ),
-      chipTheme: ChipThemeData(
-        backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: .72),
-        selectedColor: scheme.primaryContainer,
-        side: BorderSide(color: scheme.outlineVariant),
-        shape: const StadiumBorder(),
-        labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w600),
-        secondaryLabelStyle: TextStyle(color: scheme.onPrimaryContainer, fontSize: 13, fontWeight: FontWeight.w700),
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: scheme.surfaceContainerHighest.withValues(alpha: .72),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.outlineVariant),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.primary, width: 1.4),
-        ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-      ),
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
-        elevation: 2,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.all(Radius.circular(16)),
-        ),
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        backgroundColor: scheme.surface.withValues(alpha: .96),
-        indicatorColor: scheme.primaryContainer,
-        elevation: 0,
-        height: 70,
-        labelTextStyle: WidgetStatePropertyAll(
-          TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
-        ),
-      ),
-      bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: scheme.surface,
-        surfaceTintColor: Colors.transparent,
-        modalBackgroundColor: scheme.surface,
-        showDragHandle: true,
-        dragHandleColor: scheme.outline,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-        ),
-      ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: scheme.surface,
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      ),
+      cardTheme: CardThemeData(elevation: 0, margin: EdgeInsets.zero, color: scheme.surfaceContainerHighest.withValues(alpha: dark ? .72 : .68), surfaceTintColor: Colors.transparent, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18)))),
+      chipTheme: ChipThemeData(backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: .72), selectedColor: scheme.primaryContainer, side: BorderSide(color: scheme.outlineVariant), shape: const StadiumBorder(), labelStyle: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w600), secondaryLabelStyle: TextStyle(color: scheme.onPrimaryContainer, fontSize: 13, fontWeight: FontWeight.w700), padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1)),
+      inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: scheme.surfaceContainerHighest.withValues(alpha: .72), border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: scheme.outlineVariant)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: scheme.outlineVariant)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: scheme.primary, width: 1.4)), contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13)),
+      floatingActionButtonTheme: FloatingActionButtonThemeData(backgroundColor: scheme.primary, foregroundColor: scheme.onPrimary, elevation: 2, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16)))),
+      bottomSheetTheme: BottomSheetThemeData(backgroundColor: scheme.surface, surfaceTintColor: Colors.transparent, modalBackgroundColor: scheme.surface, showDragHandle: true, dragHandleColor: scheme.outline, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(26)))),
       dividerTheme: DividerThemeData(color: scheme.outlineVariant, thickness: 1, space: 1),
-      progressIndicatorTheme: ProgressIndicatorThemeData(
-        color: scheme.primary,
-        linearTrackColor: scheme.outlineVariant.withValues(alpha: .65),
-      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: scheme.primary, linearTrackColor: scheme.outlineVariant.withValues(alpha: .65)),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EPUB Reader',
-      debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
-      themeMode: ThemeMode.system,
-      home: const LibraryScreen(),
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+        title: 'EPUB Reader',
+        debugShowCheckedModeBanner: false,
+        theme: _theme(Brightness.light),
+        darkTheme: _theme(Brightness.dark),
+        themeMode: ThemeMode.system,
+        home: const RedesignedLibraryScreen(),
+      );
 }
