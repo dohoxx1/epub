@@ -9,26 +9,24 @@ const int kLightText = 0xFF282722;
 const int kDarkBackground = 0xFF242421;
 const int kDarkText = 0xFFE9E4D8;
 
-/// 사용자가 고를 수 있는 배경색/글자색 팔레트 (커스텀 테마용).
 const List<int> kBackgroundPalette = [
-  0xFFF5F1E8, // 따뜻한 종이
-  0xFFFFFFFF, // 흰색
-  0xFFEFEFEF, // 연회색
-  0xFFE3E8DE, // 세이지
-  0xFF242421, // 잉크 블랙
-  0xFF292C31, // 차콜 블루
+  0xFFF5F1E8,
+  0xFFFFFFFF,
+  0xFFEFEFEF,
+  0xFFE3E8DE,
+  0xFF242421,
+  0xFF292C31,
 ];
 
 const List<int> kTextPalette = [
-  0xFF282722, // 잉크
-  0xFF1A1A1A, // 검정
-  0xFF4A4842, // 부드러운 회색
-  0xFFE9E4D8, // 따뜻한 연회색
-  0xFFFFFFFF, // 흰색
-  0xFFB8AA8E, // 세피아
+  0xFF282722,
+  0xFF1A1A1A,
+  0xFF4A4842,
+  0xFFE9E4D8,
+  0xFFFFFFFF,
+  0xFFB8AA8E,
 ];
 
-/// Android WebView가 항상 지원하는 CSS 제네릭 폰트 패밀리.
 const List<(String label, String cssValue)> kFontChoices = [
   ('원본 폰트', ''),
   ('고딕(산세리프)', 'sans-serif'),
@@ -47,6 +45,8 @@ class ReaderSettings {
   final ReaderThemeMode themeMode;
   final int? customBackgroundColorValue;
   final int? customTextColorValue;
+  final bool eInkGrainEnabled;
+  final int whitePointReductionPercent;
 
   const ReaderSettings({
     this.fontFamily,
@@ -58,6 +58,8 @@ class ReaderSettings {
     this.themeMode = ReaderThemeMode.light,
     this.customBackgroundColorValue,
     this.customTextColorValue,
+    this.eInkGrainEnabled = true,
+    this.whitePointReductionPercent = 12,
   });
 
   factory ReaderSettings.defaults() => const ReaderSettings();
@@ -72,29 +74,21 @@ class ReaderSettings {
     ReaderThemeMode? themeMode,
     int? Function()? customBackgroundColorValue,
     int? Function()? customTextColorValue,
+    bool? eInkGrainEnabled,
+    int? whitePointReductionPercent,
   }) {
     return ReaderSettings(
       fontFamily: fontFamily != null ? fontFamily() : this.fontFamily,
-      fontSizePercent:
-          fontSizePercent != null ? fontSizePercent() : this.fontSizePercent,
-      horizontalMarginPx: horizontalMarginPx != null
-          ? horizontalMarginPx()
-          : this.horizontalMarginPx,
-      verticalMarginPx:
-          verticalMarginPx != null ? verticalMarginPx() : this.verticalMarginPx,
-      lineHeightPercent: lineHeightPercent != null
-          ? lineHeightPercent()
-          : this.lineHeightPercent,
-      paragraphSpacingPx: paragraphSpacingPx != null
-          ? paragraphSpacingPx()
-          : this.paragraphSpacingPx,
+      fontSizePercent: fontSizePercent != null ? fontSizePercent() : this.fontSizePercent,
+      horizontalMarginPx: horizontalMarginPx != null ? horizontalMarginPx() : this.horizontalMarginPx,
+      verticalMarginPx: verticalMarginPx != null ? verticalMarginPx() : this.verticalMarginPx,
+      lineHeightPercent: lineHeightPercent != null ? lineHeightPercent() : this.lineHeightPercent,
+      paragraphSpacingPx: paragraphSpacingPx != null ? paragraphSpacingPx() : this.paragraphSpacingPx,
       themeMode: themeMode ?? this.themeMode,
-      customBackgroundColorValue: customBackgroundColorValue != null
-          ? customBackgroundColorValue()
-          : this.customBackgroundColorValue,
-      customTextColorValue: customTextColorValue != null
-          ? customTextColorValue()
-          : this.customTextColorValue,
+      customBackgroundColorValue: customBackgroundColorValue != null ? customBackgroundColorValue() : this.customBackgroundColorValue,
+      customTextColorValue: customTextColorValue != null ? customTextColorValue() : this.customTextColorValue,
+      eInkGrainEnabled: eInkGrainEnabled ?? this.eInkGrainEnabled,
+      whitePointReductionPercent: whitePointReductionPercent ?? this.whitePointReductionPercent,
     );
   }
 
