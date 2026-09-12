@@ -1,9 +1,9 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/android_saf_service.dart';
 import '../services/database/app_database.dart';
 import '../services/epub_repository.dart';
 import '../services/library_scan_service.dart';
@@ -144,17 +144,19 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
   }
 
   Future<void> _addFile() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['epub']);
-    final path = result?.files.single.path;
-    if (path != null && mounted) await _open(path);
+    if (_busy) return;
+    final uri = await AndroidSafService.pickEpubFile();
+    if (!mounted || uri == null) return;
+    await _open(uri);
   }
 
   Future<void> _addFolder() async {
-    final path = await FilePicker.platform.getDirectoryPath(dialogTitle: 'EPUB이 들어있는 폴더 선택');
-    if (!mounted || path == null) return;
+    if (_busy) return;
+    final uri = await AndroidSafService.pickFolder();
+    if (!mounted || uri == null) return;
     final db = ref.read(appDatabaseProvider);
-    final id = await db.addFolderIfNew(path);
-    await _scanFolder(id, path);
+    final id = await db.addFolderIfNew(uri);
+    await _scanFolder(id, uri);
   }
 
   Future<void> _scanFolder(int id, String path) async {
@@ -172,6 +174,22 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
     }
   }
 
+  void _importSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(leading: const Icon(Icons.menu_book_outlined), title: const Text('파일 추가'), subtitle: const Text('EPUB 한 권 선택'), onTap: () { Navigator.pop(ctx); _addFile(); }),
+            ListTile(leading: const Icon(Icons.folder_outlined), title: const Text('폴더 추가'), subtitle: const Text('폴더 안의 EPUB을 모두 가져오기'), onTap: () { Navigator.pop(ctx); _addFolder(); }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final books = _visibleBooks;
@@ -182,13 +200,7 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
             ? TextField(controller: _search, autofocus: true, decoration: const InputDecoration(hintText: '제목 또는 작가 검색', border: InputBorder.none), onChanged: (v) => setState(() => _query = v))
             : const Text('내 서재'),
         actions: [
-          IconButton(
-            icon: Icon(_searching ? Icons.close : Icons.search),
-            onPressed: () => setState(() {
-              _searching = !_searching;
-              if (!_searching) { _query = ''; _search.clear(); }
-            }),
-          ),
+          IconButton(icon: Icon(_searching ? Icons.close : Icons.search), onPressed: () => setState(() { _searching = !_searching; if (!_searching) { _query = ''; _search.clear(); } })),
           PopupMenuButton<String>(
             onSelected: (v) {
               switch (v) {
@@ -207,7 +219,7 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(onPressed: _busy ? null : _addFolder, icon: const Icon(Icons.create_new_folder_outlined), label: const Text('폴더 추가')),
+      floatingActionButton: FloatingActionButton.extended(onPressed: _busy ? null : _importSheet, icon: const Icon(Icons.add), label: const Text('책 추가')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
@@ -255,58 +267,13 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
 
   Widget _continueCard(LibraryBookRow book) {
     final value = _value(book);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-      child: Material(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .5),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: () => _open(book.originalUri),
-          child: SizedBox(
-            height: 82,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              child: Row(children: [
-                SizedBox(width: 43, height: 64, child: _cover(book, 7, 43)),
-                const SizedBox(width: 12),
-                Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('계속 읽기', style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700)),
-                  const SizedBox(height: 2),
-                  Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 7),
-                  ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: value, minHeight: 3)),
-                ])),
-                const SizedBox(width: 10),
-                Text('${(value * 100).round()}%', style: Theme.of(context).textTheme.labelSmall),
-                const SizedBox(width: 2),
-                const Icon(Icons.chevron_right, size: 20),
-              ]),
-            ),
-          ),
-        ),
-      ),
-    );
+    return Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 0), child: Material(color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: .5), borderRadius: BorderRadius.circular(14), child: InkWell(borderRadius: BorderRadius.circular(14), onTap: () => _open(book.originalUri), child: SizedBox(height: 82, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9), child: Row(children: [SizedBox(width: 43, height: 64, child: _cover(book, 7, 43)), const SizedBox(width: 12), Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text('계속 읽기', style: Theme.of(context).textTheme.labelSmall?.copyWith(fontWeight: FontWeight.w700)), const SizedBox(height: 2), Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800)), const SizedBox(height: 7), ClipRRect(borderRadius: BorderRadius.circular(3), child: LinearProgressIndicator(value: value, minHeight: 3))])), const SizedBox(width: 10), Text('${(value * 100).round()}%', style: Theme.of(context).textTheme.labelSmall), const SizedBox(width: 2), const Icon(Icons.chevron_right, size: 20)]))))));
   }
 
   Widget _bookCard(LibraryBookRow book) {
     final value = _value(book);
     final state = _states[book.id];
-    return GestureDetector(
-      onTap: () => _open(book.originalUri),
-      onLongPress: () => _bookSheet(book),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Stack(children: [
-          Positioned.fill(child: _cover(book, 9, 108)),
-          if (value > 0) Positioned(left: 0, right: 0, bottom: 0, child: ClipRRect(borderRadius: const BorderRadius.vertical(bottom: Radius.circular(9)), child: LinearProgressIndicator(value: value, minHeight: 3))),
-          if (state?.completedAt != null) const Positioned(top: 6, right: 6, child: Icon(Icons.check_circle, size: 19)),
-        ])),
-        const SizedBox(height: 7),
-        Text(book.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, height: 1.15)),
-        const SizedBox(height: 2),
-        Text(book.author ?? '작가 미상', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelSmall),
-      ]),
-    );
+    return GestureDetector(onTap: () => _open(book.originalUri), onLongPress: () => _bookSheet(book), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Expanded(child: Stack(children: [Positioned.fill(child: _cover(book, 9, 108)), if (value > 0) Positioned(left: 0, right: 0, bottom: 0, child: ClipRRect(borderRadius: const BorderRadius.vertical(bottom: Radius.circular(9)), child: LinearProgressIndicator(value: value, minHeight: 3))), if (state?.completedAt != null) const Positioned(top: 6, right: 6, child: Icon(Icons.check_circle, size: 19))])), const SizedBox(height: 7), Text(book.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, height: 1.15)), const SizedBox(height: 2), Text(book.author ?? '작가 미상', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.labelSmall)]));
   }
 
   Widget _cover(LibraryBookRow book, double radius, double width) {
@@ -318,14 +285,11 @@ class _RedesignedLibraryScreenState extends ConsumerState<RedesignedLibraryScree
 
   Widget _coverFallback() => Center(child: Icon(Icons.menu_book_outlined, size: 24, color: Theme.of(context).colorScheme.onSurfaceVariant));
 
-  Widget _empty() => Center(child: Padding(padding: const EdgeInsets.all(32), child: Text(_query.isEmpty ? '아직 책이 없습니다.\n폴더 추가에서 EPUB 폴더를 등록하세요.' : '검색 결과가 없습니다.', textAlign: TextAlign.center)));
+  Widget _empty() => Center(child: Padding(padding: const EdgeInsets.all(32), child: Text(_query.isEmpty ? '아직 책이 없습니다.\n책 추가에서 EPUB 파일 또는 폴더를 등록하세요.' : '검색 결과가 없습니다.', textAlign: TextAlign.center)));
 
   Future<void> _newShelf() async {
     final c = TextEditingController();
-    final name = await showModalBottomSheet<String>(context: context, isScrollControlled: true, showDragHandle: true, builder: (ctx) => Padding(
-      padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.viewInsetsOf(ctx).bottom),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [Text('책장 추가', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 14), TextField(controller: c, textInputAction: TextInputAction.done, decoration: const InputDecoration(hintText: '예: 읽는 중, 완독, 소설'), onSubmitted: (v) => Navigator.pop(ctx, v.trim())), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('추가')))],),
-    ));
+    final name = await showModalBottomSheet<String>(context: context, isScrollControlled: true, showDragHandle: true, builder: (ctx) => Padding(padding: EdgeInsets.fromLTRB(20, 8, 20, 20 + MediaQuery.viewInsetsOf(ctx).bottom), child: Column(mainAxisSize: MainAxisSize.min, children: [Text('책장 추가', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)), const SizedBox(height: 14), TextField(controller: c, textInputAction: TextInputAction.done, decoration: const InputDecoration(hintText: '예: 읽는 중, 완독, 소설'), onSubmitted: (v) => Navigator.pop(ctx, v.trim())), const SizedBox(height: 12), Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: () => Navigator.pop(ctx, c.text.trim()), child: const Text('추가')))])));
     c.dispose();
     if (!mounted || name == null || name.isEmpty) return;
     await ref.read(appDatabaseProvider).addShelf(name);
