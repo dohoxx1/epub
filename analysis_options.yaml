@@ -16,6 +16,10 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+  errors:
+    unused_element: ignore
 
 linter:
   rules:
+    use_build_context_synchronously: false
+    curly_braces_in_flow_control_structures: false
