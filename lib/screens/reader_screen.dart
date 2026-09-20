@@ -25,6 +25,7 @@ class _SelectionInfo {
   final double top;
   final double width;
   final double height;
+  final bool atPageEnd;
 
   const _SelectionInfo({
     required this.text,
@@ -34,6 +35,7 @@ class _SelectionInfo {
     required this.top,
     required this.width,
     required this.height,
+    required this.atPageEnd,
   });
 
   factory _SelectionInfo.fromJson(Map<String, dynamic> j) => _SelectionInfo(
@@ -44,6 +46,7 @@ class _SelectionInfo {
         top: (j['top'] as num).toDouble(),
         width: (j['width'] as num).toDouble(),
         height: (j['height'] as num).toDouble(),
+        atPageEnd: j['atPageEnd'] == true,
       );
 }
 
@@ -364,6 +367,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       setState(() => _currentHighlights =
           _currentHighlights.where((h) => h.id != id).toList());
     }
+  }
+
+  Future<void> _continueHighlightSelection() async {
+    final result = await _webController.runJavaScriptReturningResult(
+      'window.__reader.continueSelection();',
+    );
+    if (result.toString().contains('chapter-end')) return;
+    if (mounted) setState(() {});
   }
 
   Future<void> _createHighlight(int colorValue) async {
@@ -1225,6 +1236,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (sel.atPageEnd)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: TextButton.icon(
+                    onPressed: _continueHighlightSelection,
+                    icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+                    label: const Text('다음 페이지 이어서 칠하기'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 9),
+                    ),
+                  ),
+                ),
               for (final colorValue in _highlightColorValues)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 4),
