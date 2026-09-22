@@ -52,6 +52,7 @@ class ReaderSearchService {
   /// [maxResultsPerChapter]개까지만 담는다 (미리보기 목적이라 이 정도면 충분).
   Future<List<SearchResult>> search({
     required List<String> chapterPaths,
+    List<int>? spineIndices,
     required String query,
     bool caseSensitive = false,
     int maxResultsPerChapter = 50,
@@ -59,11 +60,12 @@ class ReaderSearchService {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
     final results = <SearchResult>[];
-
-    for (var spineIndex = 0; spineIndex < chapterPaths.length; spineIndex++) {
+    final indices = spineIndices ?? [for (var i = 0; i < chapterPaths.length; i++) i];
+    for (var chapterIndex = 0; chapterIndex < chapterPaths.length; chapterIndex++) {
+      final spineIndex = chapterIndex < indices.length ? indices[chapterIndex] : chapterIndex;
       String raw;
       try {
-        raw = await File(chapterPaths[spineIndex]).readAsString();
+        raw = await File(chapterPaths[chapterIndex]).readAsString();
       } catch (_) {
         continue; // 파일을 못 읽으면 그 챕터는 건너뛴다.
       }
