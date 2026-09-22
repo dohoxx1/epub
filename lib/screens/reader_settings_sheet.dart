@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/reader_settings.dart';
 
-/// 리더 화면 하단에서 여는 설정 시트.
-/// 값이 바뀔 때마다 onChanged로 즉시 알려서 (슬라이더 드래그 중에도) 실시간 미리보기가 되게 한다.
 class ReaderSettingsSheet extends StatefulWidget {
   final ReaderSettings initial;
   final ValueChanged<ReaderSettings> onChanged;
@@ -21,10 +19,25 @@ class ReaderSettingsSheet extends StatefulWidget {
 
 class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
   late ReaderSettings _s = widget.initial;
+  Timer? _notifyTimer;
+  ReaderSettings? _pendingNotification;
 
   void _update(ReaderSettings Function(ReaderSettings) fn) {
-    setState(() => _s = fn(_s));
-    widget.onChanged(_s);
+    final next = fn(_s);
+    setState(() => _s = next);
+    _pendingNotification = next;
+    _notifyTimer?.cancel();
+    _notifyTimer = Timer(const Duration(milliseconds: 120), () {
+      final pending = _pendingNotification;
+      _pendingNotification = null;
+      if (pending != null && mounted) widget.onChanged(pending);
+    });
+  }
+
+  @override
+  void dispose() {
+    _notifyTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -64,12 +77,13 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
           _buildParagraphSpacingSection(),
           const Divider(height: 32),
           _buildThemeSection(),
+          const Divider(height: 32),
+          _buildDisplaySection(),
         ],
       ),
     );
   }
 
-  // ---- 폰트 ----
   Widget _buildFontSection() {
     return _SectionLabel(
       title: '폰트',
@@ -79,195 +93,130 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         children: kFontChoices.map((choice) {
           final (label, cssValue) = choice;
           final isOriginal = cssValue.isEmpty;
-          final selected =
-              isOriginal ? _s.fontFamily == null : _s.fontFamily == cssValue;
+          final selected = isOriginal ? _s.fontFamily == null : _s.fontFamily == cssValue;
           return ChoiceChip(
             label: Text(label),
             selected: selected,
-            onSelected: (_) => _update(
-              (s) => s.copyWith(fontFamily: () => isOriginal ? null : cssValue),
-            ),
+            onSelected: (_) => _update((s) => s.copyWith(fontFamily: () => isOriginal ? null : cssValue)),
           );
         }).toList(),
       ),
     );
   }
 
-  // ---- 글자 크기 ----
   Widget _buildFontSizeSection() {
     final useOriginal = _s.fontSizePercent == null;
     final value = _s.fontSizePercent ?? 100;
     return _SectionLabel(
       title: '글자 크기',
-      trailing: _OriginalToggle(
-        useOriginal: useOriginal,
-        onChanged: (useOrig) => _update(
-          (s) => s.copyWith(fontSizePercent: () => useOrig ? null : 100),
-        ),
-      ),
-      child: _AdjustableSlider(
-        value: value.toDouble(),
-        min: 70,
-        max: 250,
-        step: 5,
-        enabled: !useOriginal,
-        label: (v) => '${v.round()}%',
-        onChanged: (v) =>
-            _update((s) => s.copyWith(fontSizePercent: () => v.round())),
-      ),
+      trailing: _OriginalToggle(useOriginal: useOriginal, onChanged: (useOrig) => _update((s) => s.copyWith(fontSizePercent: () => useOrig ? null : 100))),
+      child: _AdjustableSlider(value: value.toDouble(), min: 70, max: 250, step: 5, enabled: !useOriginal, label: (v) => '${v.round()}%', onChanged: (v) => _update((s) => s.copyWith(fontSizePercent: () => v.round()))),
     );
   }
 
-  // ---- 좌우 여백 ----
   Widget _buildMarginSection() {
     final useOriginal = _s.horizontalMarginPx == null;
     final value = _s.horizontalMarginPx ?? 16;
     return _SectionLabel(
       title: '좌우 여백',
-      trailing: _OriginalToggle(
-        useOriginal: useOriginal,
-        onChanged: (useOrig) => _update(
-          (s) => s.copyWith(horizontalMarginPx: () => useOrig ? null : 16.0),
-        ),
-      ),
-      child: _AdjustableSlider(
-        value: value,
-        min: 0,
-        max: 48,
-        step: 2,
-        enabled: !useOriginal,
-        label: (v) => '${v.round()}px',
-        onChanged: (v) =>
-            _update((s) => s.copyWith(horizontalMarginPx: () => v)),
-      ),
+      trailing: _OriginalToggle(useOriginal: useOriginal, onChanged: (useOrig) => _update((s) => s.copyWith(horizontalMarginPx: () => useOrig ? null : 16.0))),
+      child: _AdjustableSlider(value: value, min: 0, max: 48, step: 2, enabled: !useOriginal, label: (v) => '${v.round()}px', onChanged: (v) => _update((s) => s.copyWith(horizontalMarginPx: () => v))),
     );
   }
 
-  // ---- 상하 여백 ----
   Widget _buildVerticalMarginSection() {
     final useOriginal = _s.verticalMarginPx == null;
     final value = _s.verticalMarginPx ?? 16;
     return _SectionLabel(
       title: '상하 여백',
-      trailing: _OriginalToggle(
-        useOriginal: useOriginal,
-        onChanged: (useOrig) => _update(
-          (s) => s.copyWith(verticalMarginPx: () => useOrig ? null : 16.0),
-        ),
-      ),
-      child: _AdjustableSlider(
-        value: value,
-        min: 0,
-        max: 64,
-        step: 2,
-        enabled: !useOriginal,
-        label: (v) => '${v.round()}px',
-        onChanged: (v) => _update((s) => s.copyWith(verticalMarginPx: () => v)),
-      ),
+      trailing: _OriginalToggle(useOriginal: useOriginal, onChanged: (useOrig) => _update((s) => s.copyWith(verticalMarginPx: () => useOrig ? null : 16.0))),
+      child: _AdjustableSlider(value: value, min: 0, max: 64, step: 2, enabled: !useOriginal, label: (v) => '${v.round()}px', onChanged: (v) => _update((s) => s.copyWith(verticalMarginPx: () => v))),
     );
   }
 
-  // ---- 줄 간격 ----
   Widget _buildLineHeightSection() {
     final useOriginal = _s.lineHeightPercent == null;
     final value = _s.lineHeightPercent ?? 150;
     return _SectionLabel(
       title: '줄 간격',
-      trailing: _OriginalToggle(
-        useOriginal: useOriginal,
-        onChanged: (useOrig) => _update(
-          (s) => s.copyWith(lineHeightPercent: () => useOrig ? null : 150),
-        ),
-      ),
-      child: _AdjustableSlider(
-        value: value.toDouble(),
-        min: 100,
-        max: 250,
-        step: 5,
-        enabled: !useOriginal,
-        label: (v) => '${v.round()}%',
-        onChanged: (v) =>
-            _update((s) => s.copyWith(lineHeightPercent: () => v.round())),
-      ),
+      trailing: _OriginalToggle(useOriginal: useOriginal, onChanged: (useOrig) => _update((s) => s.copyWith(lineHeightPercent: () => useOrig ? null : 150))),
+      child: _AdjustableSlider(value: value.toDouble(), min: 100, max: 250, step: 5, enabled: !useOriginal, label: (v) => '${v.round()}%', onChanged: (v) => _update((s) => s.copyWith(lineHeightPercent: () => v.round()))),
     );
   }
 
-  // ---- 문단 간격 ----
   Widget _buildParagraphSpacingSection() {
     final useOriginal = _s.paragraphSpacingPx == null;
     final value = _s.paragraphSpacingPx ?? 12;
     return _SectionLabel(
       title: '문단 간격',
-      trailing: _OriginalToggle(
-        useOriginal: useOriginal,
-        onChanged: (useOrig) => _update(
-          (s) => s.copyWith(paragraphSpacingPx: () => useOrig ? null : 12.0),
-        ),
-      ),
-      child: _AdjustableSlider(
-        value: value,
-        min: 0,
-        max: 32,
-        step: 2,
-        enabled: !useOriginal,
-        label: (v) => '${v.round()}px',
-        onChanged: (v) =>
-            _update((s) => s.copyWith(paragraphSpacingPx: () => v)),
-      ),
+      trailing: _OriginalToggle(useOriginal: useOriginal, onChanged: (useOrig) => _update((s) => s.copyWith(paragraphSpacingPx: () => useOrig ? null : 12.0))),
+      child: _AdjustableSlider(value: value, min: 0, max: 32, step: 2, enabled: !useOriginal, label: (v) => '${v.round()}px', onChanged: (v) => _update((s) => s.copyWith(paragraphSpacingPx: () => v))),
     );
   }
 
-  // ---- 테마 (원본/라이트/다크/사용자 지정 - 배경색+글자색) ----
   Widget _buildThemeSection() {
     return _SectionLabel(
       title: '테마',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _themeChip('원본', ReaderThemeMode.original),
-              _themeChip('라이트', ReaderThemeMode.light),
-              _themeChip('다크', ReaderThemeMode.dark),
-              _themeChip('사용자 지정', ReaderThemeMode.custom),
-            ],
-          ),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _themeChip('원본', ReaderThemeMode.original),
+            _themeChip('라이트', ReaderThemeMode.light),
+            _themeChip('다크', ReaderThemeMode.dark),
+            _themeChip('사용자 지정', ReaderThemeMode.custom),
+          ]),
           if (_s.themeMode == ReaderThemeMode.custom) ...[
             const SizedBox(height: 16),
             Text('배경색', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 8),
-            _colorSwatchRow(
-              kBackgroundPalette,
-              _s.customBackgroundColorValue,
-              (v) => _update(
-                  (s) => s.copyWith(customBackgroundColorValue: () => v)),
-            ),
+            _colorSwatchRow(kBackgroundPalette, _s.customBackgroundColorValue, (v) => _update((s) => s.copyWith(customBackgroundColorValue: () => v))),
             const SizedBox(height: 16),
             Text('글자색', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 8),
-            _colorSwatchRow(
-              kTextPalette,
-              _s.customTextColorValue,
-              (v) => _update((s) => s.copyWith(customTextColorValue: () => v)),
-            ),
+            _colorSwatchRow(kTextPalette, _s.customTextColorValue, (v) => _update((s) => s.copyWith(customTextColorValue: () => v))),
           ],
         ],
       ),
     );
   }
 
-  Widget _themeChip(String label, ReaderThemeMode mode) {
-    return ChoiceChip(
-      label: Text(label),
-      selected: _s.themeMode == mode,
-      onSelected: (_) => _update((s) => s.copyWith(themeMode: mode)),
+  Widget _buildDisplaySection() {
+    final whitePoint = _s.whitePointReductionPercent;
+    return _SectionLabel(
+      title: '화면',
+      child: Column(
+        children: [
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('전자잉크 질감'),
+            subtitle: const Text('화면 전체에 아주 미세한 흑백 입자를 추가합니다.'),
+            value: _s.eInkGrainEnabled,
+            onChanged: (value) => _update((s) => s.copyWith(eInkGrainEnabled: value)),
+          ),
+          _AdjustableSlider(
+            value: whitePoint.toDouble(),
+            min: 0,
+            max: 40,
+            step: 1,
+            enabled: true,
+            label: (v) => '${v.round()}%',
+            onChanged: (v) => _update((s) => s.copyWith(whitePointReductionPercent: v.round())),
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('화이트 포인트 줄이기', style: Theme.of(context).textTheme.bodySmall),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _colorSwatchRow(
-      List<int> palette, int? selected, ValueChanged<int> onPick) {
+  Widget _themeChip(String label, ReaderThemeMode mode) {
+    return ChoiceChip(label: Text(label), selected: _s.themeMode == mode, onSelected: (_) => _update((s) => s.copyWith(themeMode: mode)));
+  }
+
+  Widget _colorSwatchRow(List<int> palette, int? selected, ValueChanged<int> onPick) {
     return Wrap(
       spacing: 10,
       runSpacing: 10,
@@ -281,12 +230,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             decoration: BoxDecoration(
               color: Color(argb),
               shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey,
-                width: isSelected ? 3 : 1,
-              ),
+              border: Border.all(color: isSelected ? Theme.of(context).colorScheme.primary : Colors.grey, width: isSelected ? 3 : 1),
             ),
           ),
         );
@@ -299,31 +243,15 @@ class _SectionLabel extends StatelessWidget {
   final String title;
   final Widget child;
   final Widget? trailing;
-
-  const _SectionLabel(
-      {required this.title, required this.child, this.trailing});
-
+  const _SectionLabel({required this.title, required this.child, this.trailing});
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            if (trailing != null) trailing!,
-          ],
-        ),
-        const SizedBox(height: 4),
-        child,
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(title, style: Theme.of(context).textTheme.titleMedium), if (trailing != null) trailing!]),
+    const SizedBox(height: 4),
+    child,
+  ]);
 }
 
-/// 슬라이더 좌우에 -/+ 버튼을 붙여, 드래그 없이도 한 스텝씩 정밀하게 조절할 수 있게 해주는 위젯.
-/// 길게 누르고 있으면 연속으로 증가/감소한다 (IconButton의 onLongPress 대신 GestureDetector로 타이머 반복 구현).
 class _AdjustableSlider extends StatefulWidget {
   final double value;
   final double min;
@@ -332,89 +260,38 @@ class _AdjustableSlider extends StatefulWidget {
   final bool enabled;
   final String Function(double value) label;
   final ValueChanged<double> onChanged;
-
-  const _AdjustableSlider({
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.step,
-    required this.enabled,
-    required this.label,
-    required this.onChanged,
-  });
-
+  const _AdjustableSlider({required this.value, required this.min, required this.max, required this.step, required this.enabled, required this.label, required this.onChanged});
   @override
   State<_AdjustableSlider> createState() => _AdjustableSliderState();
 }
 
 class _AdjustableSliderState extends State<_AdjustableSlider> {
   Timer? _repeatTimer;
-
   double get _clampedValue => widget.value.clamp(widget.min, widget.max);
-
   void _step(double direction) {
-    final next =
-        (_clampedValue + direction * widget.step).clamp(widget.min, widget.max);
+    final next = (_clampedValue + direction * widget.step).clamp(widget.min, widget.max);
     if (next != _clampedValue) widget.onChanged(next);
   }
-
   void _startRepeating(double direction) {
-    _step(direction); // 즉시 1스텝 반응
+    _step(direction);
     _repeatTimer?.cancel();
-    _repeatTimer = Timer.periodic(
-        const Duration(milliseconds: 180), (_) => _step(direction));
+    _repeatTimer = Timer.periodic(const Duration(milliseconds: 180), (_) => _step(direction));
   }
-
-  void _stopRepeating() {
-    _repeatTimer?.cancel();
-    _repeatTimer = null;
-  }
-
+  void _stopRepeating() { _repeatTimer?.cancel(); _repeatTimer = null; }
   @override
-  void dispose() {
-    _repeatTimer?.cancel();
-    super.dispose();
-  }
-
+  void dispose() { _repeatTimer?.cancel(); super.dispose(); }
   @override
   Widget build(BuildContext context) {
     final atMin = _clampedValue <= widget.min;
     final atMax = _clampedValue >= widget.max;
-    return Row(
-      children: [
-        _StepButton(
-          icon: Icons.remove,
-          enabled: widget.enabled && !atMin,
-          onTap: () => _step(-1),
-          onHoldStart: () => _startRepeating(-1),
-          onHoldEnd: _stopRepeating,
-        ),
-        Expanded(
-          child: Column(
-            children: [
-              Slider(
-                value: _clampedValue,
-                min: widget.min,
-                max: widget.max,
-                label: widget.label(_clampedValue),
-                onChanged: widget.enabled ? widget.onChanged : null,
-              ),
-              Text(
-                widget.label(_clampedValue),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
-        _StepButton(
-          icon: Icons.add,
-          enabled: widget.enabled && !atMax,
-          onTap: () => _step(1),
-          onHoldStart: () => _startRepeating(1),
-          onHoldEnd: _stopRepeating,
-        ),
-      ],
-    );
+    return Row(children: [
+      _StepButton(icon: Icons.remove, enabled: widget.enabled && !atMin, onTap: () => _step(-1), onHoldStart: () => _startRepeating(-1), onHoldEnd: _stopRepeating),
+      Expanded(child: Column(children: [
+        Slider(value: _clampedValue, min: widget.min, max: widget.max, label: widget.label(_clampedValue), onChanged: widget.enabled ? widget.onChanged : null),
+        Text(widget.label(_clampedValue), style: Theme.of(context).textTheme.bodySmall),
+      ])),
+      _StepButton(icon: Icons.add, enabled: widget.enabled && !atMax, onTap: () => _step(1), onHoldStart: () => _startRepeating(1), onHoldEnd: _stopRepeating),
+    ]);
   }
 }
 
@@ -424,56 +301,26 @@ class _StepButton extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onHoldStart;
   final VoidCallback onHoldEnd;
-
-  const _StepButton({
-    required this.icon,
-    required this.enabled,
-    required this.onTap,
-    required this.onHoldStart,
-    required this.onHoldEnd,
-  });
-
+  const _StepButton({required this.icon, required this.enabled, required this.onTap, required this.onHoldStart, required this.onHoldEnd});
   @override
   Widget build(BuildContext context) {
-    final color = enabled
-        ? Theme.of(context).colorScheme.primary
-        : Theme.of(context).disabledColor;
+    final color = enabled ? Theme.of(context).colorScheme.primary : Theme.of(context).disabledColor;
     return GestureDetector(
       onLongPressStart: enabled ? (_) => onHoldStart() : null,
       onLongPressEnd: enabled ? (_) => onHoldEnd() : null,
       onLongPressCancel: enabled ? onHoldEnd : null,
-      child: IconButton(
-        icon: Icon(icon),
-        color: color,
-        onPressed: enabled ? onTap : null,
-        style: IconButton.styleFrom(
-          backgroundColor:
-              Theme.of(context).colorScheme.surfaceContainerHighest,
-          shape: const CircleBorder(),
-        ),
-      ),
+      child: IconButton(icon: Icon(icon), color: color, onPressed: enabled ? onTap : null, style: IconButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest, shape: const CircleBorder())),
     );
   }
 }
 
-/// "원본 사용" on/off 스위치 - 요구사항: 모든 항목에 원본 CSS를 따르는 옵션 제공.
 class _OriginalToggle extends StatelessWidget {
   final bool useOriginal;
   final ValueChanged<bool> onChanged;
-
   const _OriginalToggle({required this.useOriginal, required this.onChanged});
-
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text('원본 사용', style: Theme.of(context).textTheme.bodySmall),
-        Switch(
-          value: useOriginal,
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Row(mainAxisSize: MainAxisSize.min, children: [
+    Text('원본 사용', style: Theme.of(context).textTheme.bodySmall),
+    Switch(value: useOriginal, onChanged: onChanged),
+  ]);
 }

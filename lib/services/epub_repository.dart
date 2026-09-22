@@ -1,24 +1,29 @@
 import 'dart:io';
+
+import 'android_saf_service.dart';
 import 'epub_cache_service.dart';
 import 'epub_parser_service.dart';
 import '../models/epub_book.dart';
 
 /// "EPUB 파일 하나를 연다"는 유스케이스를 캡슐화.
-/// 화면(UI) 코드는 이 클래스만 알면 된다.
 class EpubRepository {
   final _cache = EpubCacheService();
   final _parser = EpubParserService();
 
-  /// originalPath: 사용자가 고른 원본 EPUB의 실제 경로.
-  /// 원본은 절대 이동/복사하지 않고, 읽기만 해서 캐시 디렉토리에 압축 해제한다.
-  Future<EpubBook> openBook(String originalPath) async {
-    final originalFile = File(originalPath);
+  /// 일반 파일 경로와 Android SAF content:// URI를 모두 지원한다.
+  /// 원본 EPUB은 이동/수정하지 않고, SAF URI의 읽기 스트림을 앱 캐시에
+  /// 임시 materialize한 뒤 기존 ZIP 파이프라인으로 읽는다.
+  Future<EpubBook> openBook(String originalUri) async {
+    final actualPath = originalUri.startsWith('content://')
+        ? await AndroidSafService.materializeUri(originalUri)
+        : originalUri;
+    final originalFile = File(actualPath);
     if (!await originalFile.exists()) {
-      throw Exception('원본 EPUB 파일을 찾을 수 없습니다: $originalPath');
+      throw Exception('원본 EPUB 파일을 찾을 수 없습니다: $originalUri');
     }
     final extractedDir = await _cache.ensureExtracted(originalFile);
     return _parser.parse(
-      originalUri: originalPath,
+      originalUri: originalUri,
       cacheDir: extractedDir,
     );
   }
